@@ -115,16 +115,20 @@ func CollectFighterData(link string, client *http.Client) error {
 	page := doc.Find(".l-page__container") // page container that holds all the data i need
 
 	statsBox := page.Find(".b-fight-details").First() // contains physical stats, career stats, and fights
+	// quick check to make sure we found something
 	if statsBox.Length() == 0 {
 		log.Fatal("No <fight-details> found")
 	}
 
 	pStats := statsBox.Find("div .b-list__box-list").First() // contains physical stats
+	// quick check to make sure we found something
 	if pStats.Length() == 0 {
 		log.Fatal("No <ul> found")
 	}
 
-	fmt.Printf("Nickname: %s\n", page.Find(".b-content__Nickname p").Text())
+	nickname := strings.TrimSpace(page.Find("p.b-content__Nickname").Text())
+
+	fmt.Printf("Nickname: %s\n", nickname)
 
 	pStats.Each(func(i int, ul *goquery.Selection) {
 		li := ul.ChildrenFiltered("li")
@@ -146,7 +150,7 @@ func CollectFighterData(link string, client *http.Client) error {
 	})
 
 	cStatsBoxLeft := statsBox.Find("div .b-list__info-box-left").First() // contains left side of career stats box
-	cStatsLeft := cStatsBoxLeft.Find("ul.b-list__box-list").First()
+	cStatsLeft := cStatsBoxLeft.Find("ul.b-list__box-list").First()      //narrow down to the element containing the list elements
 
 	cStatsLeft.Each(func(i int, ul *goquery.Selection) {
 		li := ul.ChildrenFiltered("li")
@@ -165,7 +169,7 @@ func CollectFighterData(link string, client *http.Client) error {
 	})
 
 	cStatsBoxRight := statsBox.Find("div .b-list__info-box-right").First() // contains right side of career stats box
-	cStatsRight := cStatsBoxRight.Find("ul.b-list__box-list").First()
+	cStatsRight := cStatsBoxRight.Find("ul.b-list__box-list").First()      // narrow down to the element containing the list elements
 
 	cStatsRight.Each(func(i int, ul *goquery.Selection) {
 		li := ul.ChildrenFiltered("li")
