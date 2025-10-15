@@ -55,3 +55,18 @@ type Event struct {
 	Location string  // location of the event
 	Fights   []Fight // slice of fights in a specific event
 }
+
+// this will feed a /Fighters endpoint
+type Fighters struct {
+	Fighters []Fighter
+}
+
+// this will feed a /Fights endpoint
+type Fights struct {
+	Fights []Fight
+}
+
+// this will feed an /Events endpoint
+type Events struct {
+	Events []Events
+}
