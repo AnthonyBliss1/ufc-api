@@ -286,9 +286,9 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 
 	page := doc.Find(".l-page__container")                   // page that contains all fight data
 	fightEvent := page.Find("h2.b-content__title a").First() // element that contains the name and href of the event
-	fightDetails := page.Find(".b-fight-details").First()
+	fightDetails := page.Find("div.b-fight-details").First()
 
-	// FIGHT DATA
+	// FIGHT DATA - HEADER TABLE
 	// ~~~~~~~~~~~~~~
 
 	eventName := strings.TrimSpace(fightEvent.Text())
@@ -350,6 +350,114 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	details = re.ReplaceAllString(details, " ")
 
 	fmt.Printf("Details: %s\n\n", details)
+
+	// TOTALS TABLE
+	// ~~~~~~~~~~~~~
+
+	totalsSection := fightDetails.Find(".b-fight-details__section").Eq(1)
+	if totalsSection.Length() == 0 {
+		fmt.Print("[No fight statistics found]\n\n")
+	}
+
+	// totalsTable will always be the first table on the page if present
+	totalsTable := totalsSection.Find("table[style] tbody tr")
+	if totalsSection.Length() > 0 && totalsTable.Length() == 0 {
+		log.Fatal("failed to find totalsTable when totalsSection is found")
+	}
+
+	totalsTable.Each(func(i int, tr *goquery.Selection) {
+		// there is only one row 'tr' so need to loop throught the 'td' children or columns
+		td := tr.ChildrenFiltered("td")
+
+		// loop through children
+		td.Each(func(i int, td *goquery.Selection) {
+			tableText := td.Find("p")
+
+			// in each column, the first index of 'p' will be p1 and second will be p2
+			p1Text := strings.TrimSpace(tableText.Eq(0).Text())
+			p2Text := strings.TrimSpace(tableText.Eq(1).Text())
+
+			switch i {
+			case 1:
+				fmt.Println("[ TOTALS ]")
+				fmt.Printf("P1 KD: %s\n", p1Text)
+				fmt.Printf("P2 KD: %s\n", p2Text)
+			case 2:
+				fmt.Printf("P1 Sig. Str.: %s\n", p1Text)
+				fmt.Printf("P2 Sig. Str.: %s\n", p2Text)
+			case 3:
+				fmt.Printf("P1 Sig. Str. Perc: %s\n", p1Text)
+				fmt.Printf("P2 Sig. Str. Perc: %s\n", p2Text)
+			case 4:
+				fmt.Printf("P1 Total Str.: %s\n", p1Text)
+				fmt.Printf("P2 Total Str.: %s\n", p2Text)
+			case 5:
+				fmt.Printf("P1 TD: %s\n", p1Text)
+				fmt.Printf("P2 TD: %s\n", p2Text)
+			case 6:
+				fmt.Printf("P1 TD Perc: %s\n", p1Text)
+				fmt.Printf("P2 TD Perc: %s\n", p2Text)
+			case 7:
+				fmt.Printf("P1 Sub. Att.: %s\n", p1Text)
+				fmt.Printf("P2 Sub. Att.: %s\n", p2Text)
+			case 8:
+				fmt.Printf("P1 Rev.: %s\n", p1Text)
+				fmt.Printf("P2 Rev.: %s\n", p2Text)
+			case 9:
+				fmt.Printf("P1 Ctrl: %s\n", p1Text)
+				fmt.Printf("P2 Ctrl: %s\n\n", p2Text)
+			}
+		})
+	})
+
+	// SIG STRIKES TABLE
+	// ~~~~~~~~~~~~~~~~~~
+
+	// since there are multiple tables on the page i need to filter by the one which contains the header 'Head' for head strikes
+	sigStrikesTable := fightDetails.Find("table[style]").FilterFunction(func(i int, s *goquery.Selection) bool {
+		theadText := strings.TrimSpace(s.Find("thead").Text())
+		return strings.Contains(theadText, "Head")
+	}).First()
+
+	// the rows containing the data will be inside the sigStrikesTable that was filtered
+	sigStrikesRows := sigStrikesTable.Find("tbody tr")
+
+	sigStrikesRows.Each(func(i int, tr *goquery.Selection) {
+		// there is only one row 'tr' so need to loop throught the 'td' children or columns
+		td := tr.ChildrenFiltered("td")
+
+		// loop through children
+		td.Each(func(i int, td *goquery.Selection) {
+			tableText := td.Find("p")
+
+			// in each column, the first index of 'p' will be p1 and second will be p2
+			p1Text := strings.TrimSpace(tableText.Eq(0).Text())
+			p2Text := strings.TrimSpace(tableText.Eq(1).Text())
+
+			switch i {
+			// can start with the head strikes since i already have sig. strike and sig. strike %
+			case 3:
+				fmt.Println("[ Significant Strikes ]")
+				fmt.Printf("P1 Head: %s\n", p1Text)
+				fmt.Printf("P2 Head: %s\n", p2Text)
+			case 4:
+				fmt.Printf("P1 Body: %s\n", p1Text)
+				fmt.Printf("P2 Body: %s\n", p2Text)
+			case 5:
+				fmt.Printf("P1 Leg: %s\n", p1Text)
+				fmt.Printf("P2 Leg: %s\n", p2Text)
+			case 6:
+				fmt.Printf("P1 Distance: %s\n", p1Text)
+				fmt.Printf("P2 Distance: %s\n", p2Text)
+			case 7:
+				fmt.Printf("P1 Clinch: %s\n", p1Text)
+				fmt.Printf("P2 Clinch: %s\n", p2Text)
+			case 8:
+				fmt.Printf("P1 Ground: %s\n", p1Text)
+				fmt.Printf("P2 Ground: %s\n\n", p2Text)
+			}
+		})
+	})
 
 	return nil
 }

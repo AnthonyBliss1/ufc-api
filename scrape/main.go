@@ -25,6 +25,6 @@ func main() {
 	// measure time elapsed from the 'start' timestamp
 	elapsed := time.Since(start)
 
-	fmt.Println("\n[Scraping Completed!]")
+	fmt.Println("\n\n[Scraping Completed!]")
 	fmt.Printf("[Time: %.2fs]\n", elapsed.Seconds())
 }
