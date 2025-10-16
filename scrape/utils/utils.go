@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -285,7 +286,10 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 
 	page := doc.Find(".l-page__container")                   // page that contains all fight data
 	fightEvent := page.Find("h2.b-content__title a").First() // element that contains the name and href of the event
-	//fightDetails := page.Find(".b-fight-details").First()
+	fightDetails := page.Find(".b-fight-details").First()
+
+	// FIGHT DATA
+	// ~~~~~~~~~~~~~~
 
 	eventName := strings.TrimSpace(fightEvent.Text())
 	eventLink, _ := fightEvent.Attr("href")
@@ -295,7 +299,57 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	}
 	eventID := path.Base(l.Path)
 
-	fmt.Printf("Event: %s | Event Link: %s | EventID: %s\n\n", eventName, eventLink, eventID)
+	fmt.Printf("Event: %s | Event Link: %s | EventID: %s\n", eventName, eventLink, eventID)
+
+	participants := fightDetails.Find(".b-fight-details__person")
+	p1Header := participants.Eq(0)
+	p2Header := participants.Eq(1)
+
+	p1Name := strings.TrimSpace(p1Header.Find("a").Text())
+	p2Name := strings.TrimSpace(p2Header.Find("a").Text())
+
+	p1Outcome := strings.TrimSpace(p1Header.Find("i").Text())
+	p2Outcome := strings.TrimSpace(p2Header.Find("i").Text())
+
+	fmt.Printf("P1: %s - %s \nP2: %s - %s\n", p1Name, p1Outcome, p2Name, p2Outcome)
+
+	boutType := strings.TrimSpace(fightDetails.Find(".b-fight-details__fight-head").First().Text())
+	fmt.Printf("Type: %s\n", boutType)
+
+	fightDetailsRow1 := fightDetails.Find(".b-fight-details__text").Eq(0)
+
+	method := fightDetailsRow1.Find("i[style]").Text()
+	fmt.Printf("Method: %s\n", strings.TrimSpace(method))
+
+	round := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(0).Text()
+	fmt.Printf("Round: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(round), "Round:")))
+
+	endTime := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(1).Text()
+	fmt.Printf("Time: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(endTime), "Time:")))
+
+	format := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(2).Text()
+	fmt.Printf("Time Format: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(format), "Time format:")))
+
+	referee := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(3).Text()
+	fmt.Printf("Referee: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(referee), "Referee:")))
+
+	fightDetailsRow2 := fightDetails.Find(".b-fight-details__text").Eq(1).Find(".b-fight-details__text-item")
+
+	var details string
+	if fightDetailsRow2.Length() == 0 {
+		// if the fight is a finish it will have the finishing method detail
+		fightDetailsRow2 = fightDetails.Find(".b-fight-details__text").Eq(1)
+		details = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(fightDetailsRow2.Text()), "Details:"))
+	} else {
+		// if the fight is not a finish it will have the judges scorecards
+		details = strings.TrimSpace(fightDetailsRow2.Text())
+	}
+
+	// these whitespaces are going to drive me insane
+	re := regexp.MustCompile(`\s+`)
+	details = re.ReplaceAllString(details, " ")
+
+	fmt.Printf("Details: %s\n\n", details)
 
 	return nil
 }
