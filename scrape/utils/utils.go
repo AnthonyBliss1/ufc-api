@@ -461,3 +461,58 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 
 	return nil
 }
+
+// UPCOMING FIGHT DATA
+// ~~~~~~~~~~~~~~~~~~~~~
+
+func CollectUpcomingEventData(client *http.Client) error {
+	eventUpcomingLink := "http://ufcstats.com/statistics/events/upcoming?page=all"
+
+	requestEvent, err := http.NewRequest("GET", eventUpcomingLink, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request for fight: %v", err)
+	}
+
+	requestEvent.Header.Add("Referer", "http://ufcstats.com/statistics/events/upcoming")
+	requestEvent.Header.Add("host", Host)
+	requestEvent.Header.Add("User-Agent", UserAgent)
+
+	resp, err := client.Do(requestEvent)
+	if err != nil {
+		return fmt.Errorf("failed to submit request for fight: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
+	}
+
+	// load body of response in goquery doc
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	page := doc.Find(".b-statistics__sub-inner")
+
+	events := page.Find("table.b-statistics__table-events tbody tr")
+	if page.Length() == 0 {
+		log.Fatal("failed to find completed events table")
+	}
+
+	events.Each(func(i int, tr *goquery.Selection) {
+		//skip first column (is an empty row)
+		if i == 0 {
+			return
+		}
+
+		td := tr.ChildrenFiltered("td")
+
+		link, _ := td.Eq(0).Find("a").Attr("href")
+
+		fmt.Printf("Event Link: %s\n", link)
+
+	})
+
+	return nil
+}

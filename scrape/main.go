@@ -18,7 +18,11 @@ func main() {
 	// start a timer to track the scraping process speed
 	start := time.Now()
 
-	if err := utils.IterateFighters(&client); err != nil {
+	// if err := utils.IterateFighters(&client); err != nil {
+	// 	log.Panic(err)
+	// }
+
+	if err := utils.CollectUpcomingEventData(&client); err != nil {
 		log.Panic(err)
 	}
 
