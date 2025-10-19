@@ -69,8 +69,7 @@ func IterateFighters(client *http.Client) error {
 
 			td := tr.ChildrenFiltered("td") // td represents each cell (or column) in the row
 
-			fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
-			fmt.Printf("Name: %s %s\n", strings.TrimSpace(td.Eq(0).Text()), strings.TrimSpace(td.Eq(1).Text()))
+			fighterName := fmt.Sprintf("%s %s", strings.TrimSpace(td.Eq(0).Text()), strings.TrimSpace(td.Eq(1).Text()))
 
 			// find the link to the fighter profile page
 			link, _ := td.Eq(0).Find("a").Attr("href")
@@ -80,8 +79,9 @@ func IterateFighters(client *http.Client) error {
 			}
 
 			fighterID := path.Base(u.Path)
-			fmt.Printf("ID: %s\n", fighterID)
-			fmt.Printf("Link to Profile: %v\n\n", link)
+
+			fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
+			fmt.Printf("Fighter Name: %s | Fighter Link: %s | FighterID: %s\n", fighterName, link, fighterID)
 
 			// navigate to the profile page and collect all data on the fighter
 			err = CollectFighterData(link, client)
@@ -247,7 +247,7 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 		fightID := path.Base(fLink.Path)
 
 		// for each fight in the fighters profile, find the fight link, capture the FightID and stats -> create fights struct
-		fmt.Printf("Fight #%d | Fight Link: %s | FightID: %s\n", i, fightLink, fightID)
+		fmt.Printf("Fight #%d | Fight Link: %s | FightID: %s\n\n", i, fightLink, fightID)
 
 		if err = CollectFightData(fightLink, fighterProfileLink, client); err != nil {
 			log.Fatalf("failed to collect fight data: %v", err)
@@ -291,15 +291,11 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	// FIGHT DATA - HEADER TABLE
 	// ~~~~~~~~~~~~~~
 
-	eventName := strings.TrimSpace(fightEvent.Text())
 	eventLink, _ := fightEvent.Attr("href")
-	l, err := url.Parse(eventLink)
-	if err != nil {
-		log.Fatalf("failed to parse fight url: %v", err)
-	}
-	eventID := path.Base(l.Path)
 
-	fmt.Printf("Event: %s | Event Link: %s | EventID: %s\n", eventName, eventLink, eventID)
+	if err := CollectFightersEvents(eventLink, fightLink, client); err != nil {
+		log.Fatalf("failed to collect fighter event: %v", err)
+	}
 
 	participants := fightDetails.Find(".b-fight-details__person")
 	p1Header := participants.Eq(0)
@@ -311,6 +307,7 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	p1Outcome := strings.TrimSpace(p1Header.Find("i").Text())
 	p2Outcome := strings.TrimSpace(p2Header.Find("i").Text())
 
+	fmt.Println("[ Fight Details ]")
 	fmt.Printf("P1: %s - %s \nP2: %s - %s\n", p1Name, p1Outcome, p2Name, p2Outcome)
 
 	boutType := strings.TrimSpace(fightDetails.Find(".b-fight-details__fight-head").First().Text())
@@ -462,6 +459,60 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	return nil
 }
 
+// COMPLETED INFORMATION (This is the only way to have a record of non-UFC events)
+// ~~~~~~~~~~~~~~~~~~~~~
+
+func CollectFightersEvents(eventLink string, reqReferer string, client *http.Client) error {
+	l, err := url.Parse(eventLink)
+	if err != nil {
+		log.Fatalf("failed to parse fight url: %v", err)
+	}
+	eventID := path.Base(l.Path)
+
+	request, err := http.NewRequest("GET", eventLink, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request for event: %v", err)
+	}
+
+	request.Header.Add("referer", reqReferer)
+	request.Header.Add("host", Host)
+	request.Header.Add("User-Agent", UserAgent)
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("failed to submit request for the event: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
+	}
+
+	// load body of response in goquery doc
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	page := doc.Find(".l-page__container")
+
+	eventName := strings.TrimSpace(page.Find(".b-content__title").First().Text())
+
+	detailsList := page.Find(".b-fight-details div ul").First()
+
+	listItems := detailsList.Find(".b-list__box-list-item")
+
+	eventDate := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(0).Text()), "Date:"))
+	eventLocation := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(1).Text()), "Location:"))
+
+	fmt.Println("[ Event Details ]")
+	fmt.Printf("Event Name: %s | Event Link: %s | EventID: %s\n", eventName, eventLink, eventID)
+	fmt.Printf("Date: %s\n", eventDate)
+	fmt.Printf("Location: %s\n\n", eventLocation)
+
+	return nil
+}
+
 // UPCOMING FIGHT DATA
 // ~~~~~~~~~~~~~~~~~~~~~
 
@@ -470,16 +521,16 @@ func CollectUpcomingEventData(client *http.Client) error {
 
 	requestEvent, err := http.NewRequest("GET", eventUpcomingLink, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request for fight: %v", err)
+		return fmt.Errorf("failed to create request for event: %v", err)
 	}
 
-	requestEvent.Header.Add("Referer", "http://ufcstats.com/statistics/events/upcoming")
+	requestEvent.Header.Add("referer", "http://ufcstats.com/statistics/events/upcoming")
 	requestEvent.Header.Add("host", Host)
 	requestEvent.Header.Add("User-Agent", UserAgent)
 
 	resp, err := client.Do(requestEvent)
 	if err != nil {
-		return fmt.Errorf("failed to submit request for fight: %v", err)
+		return fmt.Errorf("failed to submit request for event: %v", err)
 	}
 	defer resp.Body.Close()
 
