@@ -293,7 +293,7 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 
 	eventLink, _ := fightEvent.Attr("href")
 
-	if err := CollectFightersEvents(eventLink, fightLink, client); err != nil {
+	if err := CollectEventDetails(eventLink, fightLink, client); err != nil {
 		log.Fatalf("failed to collect fighter event: %v", err)
 	}
 
@@ -459,10 +459,10 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	return nil
 }
 
-// COMPLETED INFORMATION (This is the only way to have a record of non-UFC events)
+// COMPLETED EVENT DETAILS
 // ~~~~~~~~~~~~~~~~~~~~~
 
-func CollectFightersEvents(eventLink string, reqReferer string, client *http.Client) error {
+func CollectEventDetails(eventLink string, reqReferer string, client *http.Client) error {
 	l, err := url.Parse(eventLink)
 	if err != nil {
 		log.Fatalf("failed to parse fight url: %v", err)
@@ -513,7 +513,7 @@ func CollectFightersEvents(eventLink string, reqReferer string, client *http.Cli
 	return nil
 }
 
-// UPCOMING FIGHT DATA
+// UPCOMING EVENT DATA
 // ~~~~~~~~~~~~~~~~~~~~~
 
 func CollectUpcomingEventData(client *http.Client) error {
