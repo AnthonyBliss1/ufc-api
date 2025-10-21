@@ -1,15 +1,19 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/anthonybliss1/ufc-api/scrape/data"
 )
 
 // should dynamically collect this. not sure if this will affect status of request
@@ -77,25 +81,31 @@ func IterateFighters(client *http.Client) error {
 			if err != nil {
 				log.Panic("cannot parse url")
 			}
-
 			fighterID := path.Base(u.Path)
+
+			// create the fighter struct to store the data
+			fighter := data.Fighter{ID: fighterID, Name: fighterName}
 
 			fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
 			fmt.Printf("Fighter Name: %s | Fighter Link: %s | FighterID: %s\n", fighterName, link, fighterID)
 
 			// navigate to the profile page and collect all data on the fighter
-			err = CollectFighterData(link, client)
+			err = CollectFighterData(&fighter, link, client)
 			if err != nil {
 				fmt.Printf("failed to collect data from fighter profile page: %v", err)
 				return
 			}
+
+			// store the collected struct in a FighterMap type variable
+			fighterMap := make(data.FighterMap)
+			fighterMap[fighter.ID] = &fighter
 		})
 	}
 
 	return nil
 }
 
-func CollectFighterData(fighterProfileLink string, client *http.Client) error {
+func CollectFighterData(fighter *data.Fighter, fighterProfileLink string, client *http.Client) error {
 	// build request
 	req, err := http.NewRequest("GET", fighterProfileLink, nil)
 	if err != nil {
@@ -137,9 +147,9 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 		log.Fatal("No <ul> found")
 	}
 
-	nickname := strings.TrimSpace(page.Find("p.b-content__Nickname").Text())
+	fighter.Nickname = strings.TrimSpace(page.Find("p.b-content__Nickname").Text())
 
-	fmt.Printf("Nickname: %s\n", nickname)
+	fmt.Printf("Nickname: %s\n", fighter.Nickname)
 
 	// PHYSCIAL AND CAREER STATISTICS COLLECTION
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -147,20 +157,25 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 	pStats.Each(func(i int, ul *goquery.Selection) {
 		li := ul.ChildrenFiltered("li")
 
-		height := strings.TrimSpace(li.Eq(0).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Height: %s\n", height)
+		fighter.Height = strings.TrimSpace(li.Eq(0).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("Height: %s\n", fighter.Height)
 
-		weight := strings.TrimSpace(li.Eq(1).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Weight: %s\n", weight)
+		fighter.WeightLB = strings.TrimSpace(li.Eq(1).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("Weight: %s\n", fighter.WeightLB)
 
-		reach := strings.TrimSpace(li.Eq(2).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Reach: %s\n", reach)
+		fighter.ReachIN = strings.TrimSpace(li.Eq(2).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("Reach: %s\n", fighter.ReachIN)
 
-		stance := strings.TrimSpace(li.Eq(3).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Stance: %s\n", stance)
+		fighter.Stance = strings.TrimSpace(li.Eq(3).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("Stance: %s\n", fighter.Stance)
 
 		dob := strings.TrimSpace(li.Eq(4).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("DOB: %s\n", dob)
+		fighter.DOB, err = time.Parse("Jan 2, 2006", dob)
+		if err != nil {
+			log.Fatalf("Cannot format string to date: %v", err)
+		}
+
+		fmt.Printf("DOB: %s\n", fighter.DOB.Format("Jan 2, 2006"))
 	})
 
 	// LEFT SIDE OF CAREER STATS
@@ -172,17 +187,27 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 	cStatsLeft.Each(func(i int, ul *goquery.Selection) {
 		li := ul.ChildrenFiltered("li")
 
-		slpm := strings.TrimSpace(li.Eq(0).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("SLpM: %s\n", slpm)
+		slpm, err := strconv.ParseFloat(strings.TrimSpace(li.Eq(0).Clone().Find("i").Remove().End().Text()), 32)
+		if err != nil {
+			log.Fatalf("failed to format float SLpM: %v", err)
+		}
 
-		strAcc := strings.TrimSpace(li.Eq(1).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Str. Acc.: %s\n", strAcc)
+		fighter.CareerStats.SLpM = float32(slpm)
+		fmt.Printf("SLpM: %.2f\n", fighter.CareerStats.SLpM)
 
-		sapm := strings.TrimSpace(li.Eq(2).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("SApM: %s\n", sapm)
+		fighter.CareerStats.StrAcc = strings.TrimSpace(li.Eq(1).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("Str. Acc.: %s\n", fighter.CareerStats.StrAcc)
 
-		strDef := strings.TrimSpace(li.Eq(3).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Str. Def.: %s\n", strDef)
+		sapm, err := strconv.ParseFloat(strings.TrimSpace(li.Eq(2).Clone().Find("i").Remove().End().Text()), 32)
+		if err != nil {
+			log.Fatalf("failed to format float SApM: %v", err)
+		}
+
+		fighter.CareerStats.SApM = float32(sapm)
+		fmt.Printf("SApM: %.2f\n", fighter.CareerStats.SApM)
+
+		fighter.CareerStats.StrDef = strings.TrimSpace(li.Eq(3).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("Str. Def.: %s\n", fighter.CareerStats.StrDef)
 	})
 
 	// RIGHT SIDE OF CAREER STATS
@@ -194,17 +219,27 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 	cStatsRight.Each(func(i int, ul *goquery.Selection) {
 		li := ul.ChildrenFiltered("li")
 
-		tdAvg := strings.TrimSpace(li.Eq(1).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("TD Avg.: %s\n", tdAvg)
+		tdAvg, err := strconv.ParseFloat(strings.TrimSpace(li.Eq(1).Clone().Find("i").Remove().End().Text()), 32)
+		if err != nil {
+			log.Fatalf("failed to format float TdAvg: %v", err)
+		}
 
-		tdAcc := strings.TrimSpace(li.Eq(2).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("TD Acc.: %s\n", tdAcc)
+		fighter.CareerStats.TdAvg = float32(tdAvg)
+		fmt.Printf("TD Avg.: %.2f\n", fighter.CareerStats.TdAvg)
 
-		tdDef := strings.TrimSpace(li.Eq(3).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("TD Def.: %s\n", tdDef)
+		fighter.CareerStats.TdAcc = strings.TrimSpace(li.Eq(2).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("TD Acc.: %s\n", fighter.CareerStats.TdAcc)
 
-		subAvg := strings.TrimSpace(li.Eq(4).Clone().Find("i").Remove().End().Text())
-		fmt.Printf("Sub. Avg.: %s\n", subAvg)
+		fighter.CareerStats.TdDef = strings.TrimSpace(li.Eq(3).Clone().Find("i").Remove().End().Text())
+		fmt.Printf("TD Def.: %s\n", fighter.CareerStats.TdDef)
+
+		subAvg, err := strconv.ParseFloat(strings.TrimSpace(li.Eq(4).Clone().Find("i").Remove().End().Text()), 32)
+		if err != nil {
+			log.Fatalf("failed to format float SubAvg: %v", err)
+		}
+
+		fighter.CareerStats.SubAvg = float32(subAvg)
+		fmt.Printf("Sub. Avg.: %.2f\n", fighter.CareerStats.SubAvg)
 	})
 
 	// FIGHT HISTORY
@@ -236,7 +271,7 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 		// first need to capture the fight url for each of the fighter's fights
 		td := tr.ChildrenFiltered("td")
 		fightLink, e := td.Eq(0).Find("a").Attr("href")
-		if e == false {
+		if !e {
 			log.Fatal("cannot find fight link")
 		}
 		// parse out link so i can grab the base path so i can save it as the FightID
@@ -246,19 +281,25 @@ func CollectFighterData(fighterProfileLink string, client *http.Client) error {
 		}
 		fightID := path.Base(fLink.Path)
 
+		// create the fight struct to store the data
+		fight := data.Fight{ID: fightID, Participants: make([]data.FightStats, 0, 2)}
+
 		// for each fight in the fighters profile, find the fight link, capture the FightID and stats -> create fights struct
 		fmt.Printf("Fight #%d | Fight Link: %s | FightID: %s\n\n", i, fightLink, fightID)
 
-		if err = CollectFightData(fightLink, fighterProfileLink, client); err != nil {
+		if err = CollectFightData(&fight, fightLink, fighterProfileLink, client); err != nil {
 			log.Fatalf("failed to collect fight data: %v", err)
 		}
 
+		// store the collected struct in a FightMap type variable
+		fightMap := make(data.FightMap)
+		fightMap[fight.ID] = &fight
 	})
 
 	return nil
 }
 
-func CollectFightData(fightLink string, reqReferer string, client *http.Client) error {
+func CollectFightData(fight *data.Fight, fightLink string, reqReferer string, client *http.Client) error {
 	requestFight, err := http.NewRequest("GET", fightLink, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for fight: %v", err)
@@ -307,28 +348,45 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	p1Outcome := strings.TrimSpace(p1Header.Find("i").Text())
 	p2Outcome := strings.TrimSpace(p2Header.Find("i").Text())
 
-	fmt.Println("[ Fight Details ]")
-	fmt.Printf("P1: %s - %s \nP2: %s - %s\n", p1Name, p1Outcome, p2Name, p2Outcome)
+	// TODO collect the fighterIDs here
 
-	boutType := strings.TrimSpace(fightDetails.Find(".b-fight-details__fight-head").First().Text())
-	fmt.Printf("Type: %s\n", boutType)
+	// create FightStats struct for each fighter (will be []Participants in the Fight struct)
+	p1 := data.FightStats{FighterName: p1Name, Outcome: p1Outcome}
+	p2 := data.FightStats{FighterName: p2Name, Outcome: p2Outcome}
+
+	fmt.Println("[ Fight Details ]")
+	fmt.Printf("P1: %s - %s \nP2: %s - %s\n", p1.FighterName, p1.Outcome, p2.FighterName, p2.Outcome)
+
+	fight.FightDetail = strings.TrimSpace(fightDetails.Find(".b-fight-details__fight-head").First().Text())
+	fmt.Printf("Type: %s\n", fight.FightDetail)
 
 	fightDetailsRow1 := fightDetails.Find(".b-fight-details__text").Eq(0)
 
-	method := fightDetailsRow1.Find("i[style]").Text()
-	fmt.Printf("Method: %s\n", strings.TrimSpace(method))
+	fight.Method = fightDetailsRow1.Find("i[style]").Text()
+	fmt.Printf("Method: %s\n", strings.TrimSpace(fight.Method))
 
 	round := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(0).Text()
-	fmt.Printf("Round: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(round), "Round:")))
+	roundFrmt := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(round), "Round:"))
+	fight.Round, err = strconv.Atoi(roundFrmt)
+	if err != nil {
+		log.Fatalf("failed to parse int Round: %v", err)
+	}
+	fmt.Printf("Round: %d\n", fight.Round)
 
 	endTime := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(1).Text()
-	fmt.Printf("Time: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(endTime), "Time:")))
+	endTimeFrmt := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(endTime), "Time:"))
+	fight.EndTime = endTimeFrmt
+	fmt.Printf("Time: %s\n", fight.EndTime)
 
-	format := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(2).Text()
-	fmt.Printf("Time Format: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(format), "Time format:")))
+	rTime := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(2).Text()
+	rTimeFrmt := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rTime), "Time format:"))
+	fight.TimeFormat = rTimeFrmt
+	fmt.Printf("Time Format: %s\n", fight.TimeFormat)
 
 	referee := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(3).Text()
-	fmt.Printf("Referee: %s\n", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(referee), "Referee:")))
+	refereeFrmt := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(referee), "Referee:"))
+	fight.Referee = refereeFrmt
+	fmt.Printf("Referee: %s\n", fight.Referee)
 
 	fightDetailsRow2 := fightDetails.Find(".b-fight-details__text").Eq(1).Find(".b-fight-details__text-item")
 
@@ -345,8 +403,9 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 	// these whitespaces are going to drive me insane
 	re := regexp.MustCompile(`\s+`)
 	details = re.ReplaceAllString(details, " ")
+	fight.MethodDetail = details
 
-	fmt.Printf("Details: %s\n\n", details)
+	fmt.Printf("Details: %s\n\n", fight.MethodDetail)
 
 	// TOTALS TABLE
 	// ~~~~~~~~~~~~~
@@ -375,34 +434,121 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 			p2Text := strings.TrimSpace(tableText.Eq(1).Text())
 
 			switch i {
+
 			case 1:
 				fmt.Println("[ TOTALS ]")
-				fmt.Printf("P1 KD: %s\n", p1Text)
-				fmt.Printf("P2 KD: %s\n", p2Text)
+				p1Int, _ := strconv.Atoi(p1Text)
+				p1.KD = p1Int
+
+				p2Int, _ := strconv.Atoi(p2Text)
+				p2.KD = p2Int
+
+				fmt.Printf("P1 KD: %d\n", p1.KD)
+				fmt.Printf("P2 KD: %d\n\n", p2.KD)
+
 			case 2:
-				fmt.Printf("P1 Sig. Str.: %s\n", p1Text)
-				fmt.Printf("P2 Sig. Str.: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Sig. Str. : %v", err)
+				}
+				p1.SigStrL = p1l
+				p1.SigStrA = p1a
+				fmt.Printf("P1 Sig. Str. Landed: %d\n", p1.SigStrL)
+				fmt.Printf("P1 Sig. Str. Attempted: %d\n", p1.SigStrA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Sig. Str. : %v", err)
+				}
+				p2.SigStrL = p2l
+				p2.SigStrA = p2a
+				fmt.Printf("P2 Sig. Str. Landed: %d\n", p2.SigStrL)
+				fmt.Printf("P2 Sig. Str. Attempted: %d\n\n", p2.SigStrA)
+
 			case 3:
-				fmt.Printf("P1 Sig. Str. Perc: %s\n", p1Text)
-				fmt.Printf("P2 Sig. Str. Perc: %s\n", p2Text)
+				p1.SigStrPerc = p1Text
+				fmt.Printf("P1 Sig. Str. Perc: %s\n", p1.SigStrPerc)
+
+				p2.SigStrPerc = p2Text
+				fmt.Printf("P2 Sig. Str. Perc: %s\n\n", p2.SigStrPerc)
+
 			case 4:
-				fmt.Printf("P1 Total Str.: %s\n", p1Text)
-				fmt.Printf("P2 Total Str.: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Total Str.: %v", err)
+				}
+				p1.TotalStrL = p1l
+				p1.TotalStrA = p1a
+				fmt.Printf("P1 Total Str. Landed: %d\n", p1.TotalStrL)
+				fmt.Printf("P1 Total Str. Attempted: %d\n", p1.TotalStrA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Total Str.: %v", err)
+				}
+				p2.TotalStrL = p2l
+				p2.TotalStrA = p2a
+				fmt.Printf("P2 Total Str. Landed: %d\n", p2.TotalStrL)
+				fmt.Printf("P2 Total Str. Attempted: %d\n\n", p2.TotalStrA)
+
 			case 5:
-				fmt.Printf("P1 TD: %s\n", p1Text)
-				fmt.Printf("P2 TD: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int TD: %v", err)
+				}
+				p1.TdL = p1l
+				p1.TdA = p1a
+				fmt.Printf("P1 TD Landed: %d\n", p1.TdL)
+				fmt.Printf("P1 TD Attempted: %d\n", p1.TdA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int TD: %v", err)
+				}
+				p2.TdL = p2l
+				p2.TdA = p2a
+				fmt.Printf("P2 TD Landed: %d\n", p2.TdL)
+				fmt.Printf("P2 TD Attempted: %d\n\n", p2.TdA)
+
 			case 6:
-				fmt.Printf("P1 TD Perc: %s\n", p1Text)
-				fmt.Printf("P2 TD Perc: %s\n", p2Text)
+				p1.TdPerc = p1Text
+				fmt.Printf("P1 TD Perc: %s\n", p1.TdPerc)
+
+				p2.TdPerc = p2Text
+				fmt.Printf("P2 TD Perc: %s\n\n", p2.TdPerc)
+
 			case 7:
-				fmt.Printf("P1 Sub. Att.: %s\n", p1Text)
-				fmt.Printf("P2 Sub. Att.: %s\n", p2Text)
+				p1.Sub, err = strconv.Atoi(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Sub. Att.: %v", err)
+				}
+				fmt.Printf("P1 Sub. Att.: %d\n", p1.Sub)
+
+				p2.Sub, err = strconv.Atoi(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Sub. Att.: %v", err)
+				}
+				fmt.Printf("P2 Sub. Att.: %d\n\n", p2.Sub)
+
 			case 8:
-				fmt.Printf("P1 Rev.: %s\n", p1Text)
-				fmt.Printf("P2 Rev.: %s\n", p2Text)
+				p1.Rev, err = strconv.Atoi(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Rev.: %v", err)
+				}
+				fmt.Printf("P1 Rev.: %d\n", p1.Rev)
+
+				p2.Rev, err = strconv.Atoi(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Rev.: %v", err)
+				}
+				fmt.Printf("P2 Rev.: %d\n\n", p2.Rev)
+
 			case 9:
-				fmt.Printf("P1 Ctrl: %s\n", p1Text)
-				fmt.Printf("P2 Ctrl: %s\n\n", p2Text)
+				p1.Ctrl = p1Text
+				fmt.Printf("P1 Ctrl: %s\n", p1.Ctrl)
+
+				p2.Ctrl = p2Text
+				fmt.Printf("P2 Ctrl: %s\n\n", p2.Ctrl)
 			}
 		})
 	})
@@ -435,26 +581,125 @@ func CollectFightData(fightLink string, reqReferer string, client *http.Client) 
 			// can start with the head strikes since i already have sig. strike and sig. strike %
 			case 3:
 				fmt.Println("[ Significant Strikes ]")
-				fmt.Printf("P1 Head: %s\n", p1Text)
-				fmt.Printf("P2 Head: %s\n", p2Text)
+
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Head: %v", err)
+				}
+				p1.HeadL = p1l
+				p1.HeadA = p1a
+				fmt.Printf("P1 Head Landed: %d\n", p1.HeadL)
+				fmt.Printf("P1 Head Attempted: %d\n", p1.HeadA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Head: %v", err)
+				}
+				p2.HeadL = p2l
+				p2.HeadA = p2a
+				fmt.Printf("P2 Head Landed: %d\n", p2.HeadL)
+				fmt.Printf("P2 Head Attempted: %d\n\n", p2.HeadA)
+
 			case 4:
-				fmt.Printf("P1 Body: %s\n", p1Text)
-				fmt.Printf("P2 Body: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Body: %v", err)
+				}
+				p1.BodyL = p1l
+				p1.BodyA = p1a
+				fmt.Printf("P1 Body Landed: %d\n", p1.BodyL)
+				fmt.Printf("P1 Body Attempted: %d\n", p1.BodyA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Body: %v", err)
+				}
+				p2.BodyL = p2l
+				p2.BodyA = p2a
+				fmt.Printf("P2 Body Landed: %d\n", p2.BodyL)
+				fmt.Printf("P2 Body Attempted: %d\n\n", p2.BodyA)
+
 			case 5:
-				fmt.Printf("P1 Leg: %s\n", p1Text)
-				fmt.Printf("P2 Leg: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Leg: %v", err)
+				}
+				p1.LegL = p1l
+				p1.LegA = p1a
+				fmt.Printf("P1 Leg Landed: %d\n", p1.LegL)
+				fmt.Printf("P1 Leg Attempted: %d\n", p1.LegA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Leg: %v", err)
+				}
+				p2.LegL = p2l
+				p2.LegA = p2a
+				fmt.Printf("P2 Leg Landed: %d\n", p2.LegL)
+				fmt.Printf("P2 Leg Attempted: %d\n\n", p2.LegA)
+
 			case 6:
-				fmt.Printf("P1 Distance: %s\n", p1Text)
-				fmt.Printf("P2 Distance: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Distance: %v", err)
+				}
+				p1.DistanceL = p1l
+				p1.DistanceA = p1a
+				fmt.Printf("P1 Distance Landed: %d\n", p1.DistanceL)
+				fmt.Printf("P1 Distance Attempted: %d\n", p1.DistanceA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Distance: %v", err)
+				}
+				p2.DistanceL = p2l
+				p2.DistanceA = p2a
+				fmt.Printf("P2 Distance Landed: %d\n", p2.DistanceL)
+				fmt.Printf("P2 Distance Attempted: %d\n\n", p2.DistanceA)
+
 			case 7:
-				fmt.Printf("P1 Clinch: %s\n", p1Text)
-				fmt.Printf("P2 Clinch: %s\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Clinch: %v", err)
+				}
+				p1.ClinchL = p1l
+				p1.ClinchA = p1a
+				fmt.Printf("P1 Clinch Landed: %d\n", p1.ClinchL)
+				fmt.Printf("P1 Clinch Attempted: %d\n", p1.ClinchA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Clinch: %v", err)
+				}
+				p2.ClinchL = p2l
+				p2.ClinchA = p2a
+				fmt.Printf("P2 Clinch Landed: %d\n", p2.ClinchL)
+				fmt.Printf("P2 Clinch Attempted: %d\n\n", p2.ClinchA)
+
 			case 8:
-				fmt.Printf("P1 Ground: %s\n", p1Text)
-				fmt.Printf("P2 Ground: %s\n\n", p2Text)
+				p1l, p1a, err := extracNums(p1Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Ground: %v", err)
+				}
+				p1.GroundL = p1l
+				p1.GroundA = p1a
+				fmt.Printf("P1 Ground Landed: %d\n", p1.GroundL)
+				fmt.Printf("P1 Ground Attempted: %d\n", p1.GroundA)
+
+				p2l, p2a, err := extracNums(p2Text)
+				if err != nil {
+					log.Fatalf("failed to parse int Ground: %v", err)
+				}
+				p2.GroundL = p2l
+				p2.GroundA = p2a
+				fmt.Printf("P2 Ground Landed: %d\n", p2.GroundL)
+				fmt.Printf("P2 Ground Attempted: %d\n\n", p2.GroundA)
 			}
 		})
 	})
+
+	fight.Participants = append(fight.Participants, p1)
+	fight.Participants = append(fight.Participants, p2)
 
 	return nil
 }
@@ -566,4 +811,24 @@ func CollectUpcomingEventData(client *http.Client) error {
 	})
 
 	return nil
+}
+
+func extracNums(s string) (i1, i2 int, err error) {
+	ofIndex := strings.Index(s, "of")
+
+	if ofIndex == -1 {
+		return 0, 0, errors.New("failed to find 2 integers")
+	}
+
+	i1, err = strconv.Atoi(s[:ofIndex-1])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	i2, err = strconv.Atoi(s[ofIndex+3:])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return i1, i2, nil
 }
