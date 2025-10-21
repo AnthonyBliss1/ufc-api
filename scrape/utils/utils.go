@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -23,11 +25,69 @@ const UserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Fire
 const Referer = "http://ufcstats.com/statistics/fighters"
 const Host = "ufcstats.com"
 
+var (
+	fighterMap = make(data.FighterMap)
+	fightMap   = make(data.FightMap)
+	eventMap   = make(data.EventMap)
+)
+
 // query param 'char=' letters to iterate through
 var Letters = []string{
 	"a", "b", "c", "d", "e", "f", "g", "h", "i",
 	"j", "k", "l", "m", "n", "o", "p", "q", "r",
 	"s", "t", "u", "v", "w", "x", "y", "z",
+}
+
+func CreateProxyClient() (*http.Client, error) {
+	// store env variables to build proxy url
+	oxyName := os.Getenv("OXYLABS_USERNAME")
+	if oxyName == "" {
+		return nil, fmt.Errorf("oxy username not set")
+	}
+
+	oxyPass := os.Getenv("OXYLABS_PASSWORD")
+	if oxyPass == "" {
+		return nil, fmt.Errorf("oxy pass not set")
+	}
+
+	oxyProxyHost := os.Getenv("OXYLABS_PROXY_HOST")
+	if oxyProxyHost == "" {
+		return nil, fmt.Errorf("oxy host not set")
+	}
+
+	oxyProxyPort := os.Getenv("OXYLABS_PROXY_PORT")
+	if oxyProxyPort == "" {
+		return nil, fmt.Errorf("oxy port not set")
+	}
+
+	// build the proxy_url using the env variables
+	proxy_string := fmt.Sprintf("http://user-%s:%s@%s:%s", oxyName, oxyPass, oxyProxyHost, oxyProxyPort)
+	proxy_url, err := url.Parse(proxy_string)
+	if err != nil {
+		return nil, fmt.Errorf("parsing proxy url: %v", err)
+	}
+
+	dialer := &net.Dialer{
+		Timeout:   3 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
+	// create transport using the proxy_url
+	transport := &http.Transport{
+		Proxy:               http.ProxyURL(proxy_url),
+		DialContext:         dialer.DialContext,
+		TLSHandshakeTimeout: 3 * time.Second,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+		ForceAttemptHTTP2:   true,
+		//DisableKeepAlives:   true,
+	}
+
+	// wrap the proxy transport in the client
+	client := &http.Client{Transport: transport}
+
+	return client, nil
 }
 
 func IterateFighters(client *http.Client) error {
@@ -97,7 +157,6 @@ func IterateFighters(client *http.Client) error {
 			}
 
 			// store the collected struct in a FighterMap type variable
-			fighterMap := make(data.FighterMap)
 			fighterMap[fighter.ID] = &fighter
 		})
 	}
@@ -147,8 +206,11 @@ func CollectFighterData(fighter *data.Fighter, fighterProfileLink string, client
 		log.Fatal("No <ul> found")
 	}
 
-	fighter.Nickname = strings.TrimSpace(page.Find("p.b-content__Nickname").Text())
+	currentRecord := strings.TrimSpace(page.Find(".b-content__title-record").Text())
+	fighter.CurrentRecord = strings.TrimSpace(strings.TrimPrefix(currentRecord, "Record:"))
+	fmt.Printf("Current Record: %s\n", fighter.CurrentRecord)
 
+	fighter.Nickname = strings.TrimSpace(page.Find("p.b-content__Nickname").Text())
 	fmt.Printf("Nickname: %s\n", fighter.Nickname)
 
 	// PHYSCIAL AND CAREER STATISTICS COLLECTION
@@ -170,12 +232,21 @@ func CollectFighterData(fighter *data.Fighter, fighterProfileLink string, client
 		fmt.Printf("Stance: %s\n", fighter.Stance)
 
 		dob := strings.TrimSpace(li.Eq(4).Clone().Find("i").Remove().End().Text())
-		fighter.DOB, err = time.Parse("Jan 2, 2006", dob)
-		if err != nil {
-			log.Fatalf("Cannot format string to date: %v", err)
+		if dob == "--" || dob == "" {
+			fighter.DOB = nil
+		} else {
+			parsedDOB, err := time.Parse("Jan 2, 2006", dob)
+			if err != nil {
+				log.Fatalf("failed to parse D.O.B: %v", err)
+			}
+			fighter.DOB = &parsedDOB
 		}
 
-		fmt.Printf("DOB: %s\n", fighter.DOB.Format("Jan 2, 2006"))
+		if fighter.DOB != nil {
+			fmt.Printf("DOB: %s\n", fighter.DOB.Format("Jan 2, 2006"))
+		} else {
+			fmt.Println("DOB: nil")
+		}
 	})
 
 	// LEFT SIDE OF CAREER STATS
@@ -292,7 +363,6 @@ func CollectFighterData(fighter *data.Fighter, fighterProfileLink string, client
 		}
 
 		// store the collected struct in a FightMap type variable
-		fightMap := make(data.FightMap)
 		fightMap[fight.ID] = &fight
 	})
 
@@ -329,33 +399,61 @@ func CollectFightData(fight *data.Fight, fightLink string, reqReferer string, cl
 	fightEvent := page.Find("h2.b-content__title a").First() // element that contains the name and href of the event
 	fightDetails := page.Find("div.b-fight-details").First()
 
+	// adding this block to identify an 'Upcoming' fight which i want to skip (will have a function to gather Upcoming fights separately)
+	fightDetailsSection := fightDetails.Find(".b-fight-details__section")
+	fdSectionTitle := strings.TrimSpace(fightDetailsSection.Find("a").First().Text())
+	if fdSectionTitle == "Matchup" {
+		fmt.Print("[ UPCOMING FIGHT ]\n\n")
+		return nil
+	}
+
 	// FIGHT DATA - HEADER TABLE
 	// ~~~~~~~~~~~~~~
 
+	event := data.Event{}
+
 	eventLink, _ := fightEvent.Attr("href")
 
-	if err := CollectEventDetails(eventLink, fightLink, client); err != nil {
+	if err := CollectEventDetails(&event, eventLink, fightLink, client); err != nil {
 		log.Fatalf("failed to collect fighter event: %v", err)
 	}
+
+	// store the collected struct in an EventMap type variable
+	eventMap[event.ID] = &event
+
+	// add EventID to Fight struct
+	fight.EventID = event.ID
 
 	participants := fightDetails.Find(".b-fight-details__person")
 	p1Header := participants.Eq(0)
 	p2Header := participants.Eq(1)
 
+	// collecting the FighterIDs
 	p1Name := strings.TrimSpace(p1Header.Find("a").Text())
+	p1Link, _ := p1Header.Find("a").Attr("href")
+	p1Url, err := url.Parse(p1Link)
+	if err != nil {
+		log.Fatalf("failed to parse participant ID: %v", err)
+	}
+	p1ID := path.Base(p1Url.Path)
+
 	p2Name := strings.TrimSpace(p2Header.Find("a").Text())
+	p2Link, _ := p2Header.Find("a").Attr("href")
+	p2Url, err := url.Parse(p2Link)
+	if err != nil {
+		log.Fatalf("failed to parse participant ID: %v", err)
+	}
+	p2ID := path.Base(p2Url.Path)
 
 	p1Outcome := strings.TrimSpace(p1Header.Find("i").Text())
 	p2Outcome := strings.TrimSpace(p2Header.Find("i").Text())
 
-	// TODO collect the fighterIDs here
-
 	// create FightStats struct for each fighter (will be []Participants in the Fight struct)
-	p1 := data.FightStats{FighterName: p1Name, Outcome: p1Outcome}
-	p2 := data.FightStats{FighterName: p2Name, Outcome: p2Outcome}
+	p1 := data.FightStats{FighterID: p1ID, FighterName: p1Name, Outcome: p1Outcome}
+	p2 := data.FightStats{FighterID: p2ID, FighterName: p2Name, Outcome: p2Outcome}
 
 	fmt.Println("[ Fight Details ]")
-	fmt.Printf("P1: %s - %s \nP2: %s - %s\n", p1.FighterName, p1.Outcome, p2.FighterName, p2.Outcome)
+	fmt.Printf("P1: %s | %s - %s \nP2: %s | %s - %s\n", p1.FighterName, p1.FighterID, p1.Outcome, p2.FighterName, p2.FighterID, p2.Outcome)
 
 	fight.FightDetail = strings.TrimSpace(fightDetails.Find(".b-fight-details__fight-head").First().Text())
 	fmt.Printf("Type: %s\n", fight.FightDetail)
@@ -707,12 +805,12 @@ func CollectFightData(fight *data.Fight, fightLink string, reqReferer string, cl
 // COMPLETED EVENT DETAILS
 // ~~~~~~~~~~~~~~~~~~~~~
 
-func CollectEventDetails(eventLink string, reqReferer string, client *http.Client) error {
+func CollectEventDetails(event *data.Event, eventLink string, reqReferer string, client *http.Client) error {
 	l, err := url.Parse(eventLink)
 	if err != nil {
 		log.Fatalf("failed to parse fight url: %v", err)
 	}
-	eventID := path.Base(l.Path)
+	event.ID = path.Base(l.Path)
 
 	request, err := http.NewRequest("GET", eventLink, nil)
 	if err != nil {
@@ -741,19 +839,23 @@ func CollectEventDetails(eventLink string, reqReferer string, client *http.Clien
 
 	page := doc.Find(".l-page__container")
 
-	eventName := strings.TrimSpace(page.Find(".b-content__title").First().Text())
+	event.Name = strings.TrimSpace(page.Find(".b-content__title").First().Text())
 
 	detailsList := page.Find(".b-fight-details div ul").First()
 
 	listItems := detailsList.Find(".b-list__box-list-item")
 
-	eventDate := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(0).Text()), "Date:"))
-	eventLocation := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(1).Text()), "Location:"))
+	event.Date, err = time.Parse("January 2, 2006", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(0).Text()), "Date:")))
+	if err != nil {
+		log.Fatalf("failed to parse event date: %v", err)
+	}
+
+	event.Location = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(1).Text()), "Location:"))
 
 	fmt.Println("[ Event Details ]")
-	fmt.Printf("Event Name: %s | Event Link: %s | EventID: %s\n", eventName, eventLink, eventID)
-	fmt.Printf("Date: %s\n", eventDate)
-	fmt.Printf("Location: %s\n\n", eventLocation)
+	fmt.Printf("Event Name: %s | Event Link: %s | EventID: %s\n", event.Name, eventLink, event.ID)
+	fmt.Printf("Date: %s\n", event.Date.Format("January 2, 2006"))
+	fmt.Printf("Location: %s\n\n", event.Location)
 
 	return nil
 }
@@ -761,7 +863,8 @@ func CollectEventDetails(eventLink string, reqReferer string, client *http.Clien
 // UPCOMING EVENT DATA
 // ~~~~~~~~~~~~~~~~~~~~~
 
-func CollectUpcomingEventData(client *http.Client) error {
+// TODO complete this function to collect data on all the upcoming fights
+func CollectUpcomingEventData(event *data.Event, client *http.Client) error {
 	eventUpcomingLink := "http://ufcstats.com/statistics/events/upcoming?page=all"
 
 	requestEvent, err := http.NewRequest("GET", eventUpcomingLink, nil)

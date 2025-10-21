@@ -10,15 +10,16 @@ type (
 )
 
 type Fighter struct {
-	ID          string      `bson:"_id" json:"id"`                    // unique id given to the fighter
-	Name        string      `bson:"name" json:"name"`                 // full name of the fighter
-	Nickname    string      `bson:"nickname" json:"nickname"`         // nickname of the fighter
-	Height      string      `bson:"height" json:"height"`             // height of the fighter (i.e 5'11)
-	WeightLB    string      `bson:"weight_lb" json:"weight_lb"`       // weight of the fighter in pounds (i.e 155 lbs)
-	ReachIN     string      `bson:"reach_in" json:"reach_in"`         // reach distance of the fighter in cm
-	Stance      string      `bson:"stance" json:"stance"`             // stance style of the fighter
-	DOB         time.Time   `bson:"dob" json:"dob"`                   // date of the birth
-	CareerStats CareerStats `bson:"career_stats" json:"career_stats"` // see 'CareerStats' type below
+	ID            string      `bson:"_id" json:"id"`                        // unique id given to the fighter
+	Name          string      `bson:"name" json:"name"`                     // full name of the fighter
+	CurrentRecord string      `bson:"current_record" json:"current_record"` // the current record of the fighter as of date of collection
+	Nickname      string      `bson:"nickname" json:"nickname"`             // nickname of the fighter
+	Height        string      `bson:"height" json:"height"`                 // height of the fighter (i.e 5'11)
+	WeightLB      string      `bson:"weight_lb" json:"weight_lb"`           // weight of the fighter in pounds (i.e 155 lbs)
+	ReachIN       string      `bson:"reach_in" json:"reach_in"`             // reach distance of the fighter in cm
+	Stance        string      `bson:"stance" json:"stance"`                 // stance style of the fighter
+	DOB           *time.Time  `bson:"dob,omitempty" json:"dob,omitempty"`   // date of the birth
+	CareerStats   CareerStats `bson:"career_stats" json:"career_stats"`     // see 'CareerStats' type below
 }
 
 type CareerStats struct {
