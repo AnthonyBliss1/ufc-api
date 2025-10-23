@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/anthonybliss1/ufc-api/scrape/data"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // should dynamically collect this. not sure if this will affect status of request
@@ -934,4 +937,41 @@ func extracNums(s string) (i1, i2 int, err error) {
 	}
 
 	return i1, i2, nil
+}
+
+func RunBatches() {
+	connString := os.Getenv("MONGO_URI")
+	if connString == "" {
+		log.Fatal("mongodb connection string empty")
+	}
+
+	ctx := context.Background()
+
+	client, err := mongo.Connect(options.Client().ApplyURI(connString))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		log.Fatalf("could not connect to MongoDB: %v", err)
+	}
+	defer func() {
+		if err := client.Disconnect(ctx); err != nil {
+			log.Printf("disconnect error: %v", err)
+		}
+	}()
+
+	db := client.Database("ufc")
+
+	if err := data.BatchLoad(ctx, db.Collection("fighters"), fighterMap, 1000); err != nil {
+		log.Fatalf("fighters load failed: %v", err)
+	}
+	if err := data.BatchLoad(ctx, db.Collection("events"), eventMap, 1000); err != nil {
+		log.Fatalf("events load failed: %v", err)
+	}
+	if err := data.BatchLoad(ctx, db.Collection("fights"), fightMap, 1000); err != nil {
+		log.Fatalf("fights load failed: %v", err)
+	}
+
+	fmt.Println("✅ Data loaded successfully!")
 }
