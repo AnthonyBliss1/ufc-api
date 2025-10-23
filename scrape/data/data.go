@@ -1,6 +1,14 @@
 package data
 
-import "time"
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+)
 
 // creating maps to load scraping data (avoiding dupes) then converted to slice structs for laoding into mongo db
 type (
@@ -8,6 +16,12 @@ type (
 	EventMap   map[string]*Event
 	FightMap   map[string]*Fight
 )
+
+// creating 'IDable' interface which is any type that implements these methods (used for BatchLoad())
+type IDable interface {
+	GetID() string
+	SetID(string)
+}
 
 type Fighter struct {
 	ID            string      `bson:"_id" json:"id"`                                // unique id given to the fighter
@@ -96,4 +110,51 @@ type Fights struct {
 // this will feed an /Events endpoint
 type Events struct {
 	Items []Event `bson:"events" json:"events"`
+}
+
+// defining methods to make struct types 'IDable'
+func (f *Fighter) GetID() string   { return f.ID }
+func (f *Fighter) SetID(id string) { f.ID = id }
+
+func (e *Event) GetID() string   { return e.ID }
+func (e *Event) SetID(id string) { e.ID = id }
+
+func (ft *Fight) GetID() string   { return ft.ID }
+func (ft *Fight) SetID(id string) { ft.ID = id }
+
+// upload data into mongodb collection for either FighterMap, EventMap, or FightMap with values of 'IDable'. default batch size is 1000
+func BatchLoad[T IDable](ctx context.Context, coll *mongo.Collection, m map[string]T, batchSize int) error {
+	//setting default batch size
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	batch := make([]mongo.WriteModel, 0, batchSize)
+
+	// looping through each struct in the map
+	for k, v := range m {
+		v.SetID(k)
+
+		// define batch
+		batch = append(batch, mongo.NewReplaceOneModel().
+			SetFilter(bson.M{"_id": v.GetID()}).
+			SetReplacement(v).
+			SetUpsert(true))
+
+		// batch upload when batch exceeds defined batch size
+		if len(batch) >= batchSize {
+			if _, err := coll.BulkWrite(ctx, batch, options.BulkWrite().SetOrdered(false)); err != nil {
+				return fmt.Errorf("bulk write failed: %v", err)
+			}
+			batch = batch[:0]
+		}
+	}
+
+	// final batch upload if it does not exceed batch size
+	if len(batch) > 0 {
+		if _, err := coll.BulkWrite(ctx, batch, options.BulkWrite().SetOrdered(false)); err != nil {
+			return fmt.Errorf("final bulk write failed: %v", err)
+		}
+	}
+	return nil
 }
