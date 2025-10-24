@@ -866,7 +866,7 @@ func CollectEventDetails(event *data.Event, eventLink string, reqReferer string,
 // UPCOMING EVENT DATA
 // ~~~~~~~~~~~~~~~~~~~~~
 
-// TODO complete this function to collect data on all the upcoming fights
+// TODO complete this function to collect data on all the upcoming fights and each matchup for the upcoming events
 func CollectUpcomingEventData(event *data.Event, client *http.Client) error {
 	eventUpcomingLink := "http://ufcstats.com/statistics/events/upcoming?page=all"
 

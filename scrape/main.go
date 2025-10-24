@@ -45,6 +45,8 @@ func main() {
 	}
 
 	// after all data is collected load batches into the mongodb
+	fmt.Println("[Running Batches...]")
+	fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
 	utils.RunBatches()
 
 	// if err := utils.CollectUpcomingEventData(&client); err != nil {
@@ -54,6 +56,6 @@ func main() {
 	// measure time elapsed from the 'start' timestamp
 	elapsed := time.Since(start)
 
-	fmt.Println("\n\n[Process Completed!]")
-	fmt.Printf("[Time: %.2fs]\n", elapsed.Seconds())
+	fmt.Println("\n[Process Completed!]")
+	fmt.Printf("[Time: %.2fH]\n", elapsed.Hours())
 }
