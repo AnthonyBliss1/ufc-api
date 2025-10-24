@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -25,37 +26,44 @@ func init() {
 		os.Setenv(key, value)
 	}
 
-	fmt.Print("[Environment Variables Set!]\n\n")
+	fmt.Print("\n[Environment Variables Set!]\n\n")
 }
 
 func main() {
+	var update = flag.Bool("update", false, "run update function only")
+
+	flag.Parse()
+
 	client, err := utils.CreateProxyClient()
 	if err != nil {
 		log.Fatalf("[Proxy Client Build Failed: %v]", err)
 	}
 
-	fmt.Println("[Starting Scraping...]")
-	fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
-
 	// start a timer to track the scraping process speed
 	start := time.Now()
 
-	// if err := utils.IterateFighters(client); err != nil {
-	// 	log.Panic(err)
-	// }
+	if *update {
+		// only collect most recent data not in db
+		fmt.Println("[Starting Update...]")
+		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
 
-	if err := utils.RunUpdate(client); err != nil {
-		log.Panic(err)
+		if err := utils.RunUpdate(client); err != nil {
+			log.Panic(err)
+		}
+	} else {
+		// collect all data
+		fmt.Println("[Starting Complete Refresh...]")
+		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
+
+		if err := utils.IterateFighters(client); err != nil {
+			log.Panic(err)
+		}
 	}
 
 	// after all data is collected load batches into the mongodb
 	fmt.Println("[Running Batches...]")
 	fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
 	utils.RunBatches()
-
-	// if err := utils.CollectUpcomingEventData(&client); err != nil {
-	// 	log.Panic(err)
-	// }
 
 	// measure time elapsed from the 'start' timestamp
 	elapsed := time.Since(start)

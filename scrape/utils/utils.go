@@ -955,7 +955,7 @@ func RunUpdate(webClient *http.Client) error {
 	ev, err := getLatestEvent(ctx, events)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			log.Println("no events found")
+			log.Println("no events from db found")
 			return nil
 		}
 		return err
@@ -1011,7 +1011,7 @@ func RunUpdate(webClient *http.Client) error {
 		eventID := path.Base(u.Path)
 
 		if eventID == recentEventID {
-			fmt.Printf("[Found Match in DB!]\nNew Events: %d\n", len(newEvents))
+			fmt.Printf("[Found Event Match in DB!]\n[New Events: %d]\n", len(newEvents))
 			return false
 		}
 		newEvents = append(newEvents, link)
