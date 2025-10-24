@@ -124,6 +124,11 @@ func (ft *Fight) SetID(id string) { ft.ID = id }
 
 // upload data into mongodb collection for either FighterMap, EventMap, or FightMap with values of 'IDable'. default batch size is 1000
 func BatchLoad[T IDable](ctx context.Context, coll *mongo.Collection, m map[string]T, batchSize int) error {
+	if len(m) == 0 {
+		fmt.Println("[Batch Data is Empty, Now Exiting...]")
+		return nil
+	}
+
 	//setting default batch size
 	if batchSize <= 0 {
 		batchSize = 1000
@@ -156,5 +161,8 @@ func BatchLoad[T IDable](ctx context.Context, coll *mongo.Collection, m map[stri
 			return fmt.Errorf("final bulk write failed: %v", err)
 		}
 	}
+
+	fmt.Printf("✅ [%s] data loaded successfully!\n", coll.Name())
+
 	return nil
 }

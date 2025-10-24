@@ -17,6 +17,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/anthonybliss1/ufc-api/scrape/data"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -463,7 +464,7 @@ func CollectFightData(fight *data.Fight, fightLink string, reqReferer string, cl
 
 	fightDetailsRow1 := fightDetails.Find(".b-fight-details__text").Eq(0)
 
-	fight.Method = fightDetailsRow1.Find("i[style]").Text()
+	fight.Method = strings.TrimSpace(fightDetailsRow1.Find("i[style]").Text())
 	fmt.Printf("Method: %s\n", strings.TrimSpace(fight.Method))
 
 	round := fightDetailsRow1.Find(".b-fight-details__text-item").Eq(0).Text()
@@ -919,6 +920,206 @@ func CollectUpcomingEventData(event *data.Event, client *http.Client) error {
 	return nil
 }
 
+// ADDING NEW DATA
+// ~~~~~~~~~~~~~~~~~~~~~
+
+func RunUpdate(webClient *http.Client) error {
+	const eventPage = "http://ufcstats.com/statistics/events/completed?page=all"
+
+	var newEvents = make([]string, 0, 10)
+
+	connString := os.Getenv("MONGO_URI")
+	if connString == "" {
+		log.Fatal("mongodb connection string empty")
+	}
+
+	ctx := context.Background()
+
+	client, err := mongo.Connect(options.Client().ApplyURI(connString))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		log.Fatalf("could not connect to MongoDB: %v", err)
+	}
+	defer func() {
+		if err := client.Disconnect(ctx); err != nil {
+			log.Printf("disconnect error: %v", err)
+		}
+	}()
+
+	db := client.Database("ufc")
+	events := db.Collection("events")
+
+	ev, err := getLatestEvent(ctx, events)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			log.Println("no events found")
+			return nil
+		}
+		return err
+	}
+
+	recentEventID := ev.ID
+
+	request, err := http.NewRequest("GET", eventPage, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build request to events page: %v", err)
+	}
+
+	request.Header.Add("host", Host)
+	request.Header.Add("User-Agent", UserAgent)
+
+	resp, err := webClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("failed to submit request for event: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
+	}
+
+	// load body of response in goquery doc
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	page := doc.Find(".b-statistics__sub-inner")
+
+	allEvents := page.Find("table.b-statistics__table-events tbody tr")
+	if page.Length() == 0 {
+		log.Fatal("failed to find completed events table")
+	}
+
+	allEvents.EachWithBreak(func(i int, tr *goquery.Selection) bool {
+		//skip first column (is an empty row)
+		if i <= 1 {
+			return true
+		}
+
+		td := tr.ChildrenFiltered("td")
+
+		link, _ := td.Eq(0).Find("a").Attr("href")
+
+		u, err := url.Parse(link)
+		if err != nil {
+			log.Panic("cannot parse url")
+		}
+		eventID := path.Base(u.Path)
+
+		if eventID == recentEventID {
+			fmt.Printf("[Found Match in DB!]\nNew Events: %d\n", len(newEvents))
+			return false
+		}
+		newEvents = append(newEvents, link)
+		return true
+	})
+
+	if len(newEvents) > 0 {
+		fmt.Print("\n[Collecting New Data...]\n\n")
+		for _, link := range newEvents {
+			request, err := http.NewRequest("GET", link, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create newEvent request: %v", err)
+			}
+
+			request.Header.Add("referer", eventPage)
+			request.Header.Add("host", Host)
+			request.Header.Add("User-Agent", UserAgent)
+
+			resp, err := webClient.Do(request)
+			if err != nil {
+				return fmt.Errorf("failed to make newevent request: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
+			}
+
+			doc, err := goquery.NewDocumentFromReader(resp.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read response body: %v", err)
+			}
+
+			page := doc.Find(".l-page__container")
+
+			fightRows := page.Find(".b-fight-details__table tbody tr")
+
+			if fightRows.Length() == 0 {
+				log.Fatal("Cannot find fight rows")
+			}
+
+			fightRows.Each(func(i int, tr *goquery.Selection) {
+				td := tr.ChildrenFiltered("td")
+
+				// grab the names of each fighter in the fight and will need to update their records
+				p1Name := strings.TrimSpace(td.Eq(1).Find("p").Eq(0).Text())
+				p2Name := strings.TrimSpace(td.Eq(1).Find("p").Eq(1).Text())
+
+				fighterLinks := td.Eq(1).Find("p")
+				p1Link, _ := fighterLinks.Eq(0).Find("a").Attr("href")
+				p2Link, _ := fighterLinks.Eq(1).Find("a").Attr("href")
+
+				u1, err := url.Parse(p1Link)
+				if err != nil {
+					log.Panic("cannot parse url")
+				}
+				p1ID := path.Base(u1.Path)
+
+				u2, err := url.Parse(p2Link)
+				if err != nil {
+					log.Panic("cannot parse url")
+				}
+				p2ID := path.Base(u2.Path)
+
+				f1 := data.Fighter{ID: p1ID, Name: p1Name}
+				f2 := data.Fighter{ID: p2ID, Name: p2Name}
+
+				fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
+				fmt.Printf("Fighter Name: %s | Fighter Link: %s | FighterID: %s\n", f1.Name, p1Link, f1.ID)
+				if err := CollectFighterData(&f1, p1Link, webClient); err != nil {
+					log.Fatalf("failed to collect p1 data: %v", err)
+				}
+
+				fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
+				fmt.Printf("Fighter Name: %s | Fighter Link: %s | FighterID: %s\n", f2.Name, p2Link, f2.ID)
+				if err := CollectFighterData(&f2, p2Link, webClient); err != nil {
+					log.Fatalf("failed to collect p2 data: %v", err)
+				}
+
+				fighterMap[f1.ID] = &f1
+				fighterMap[f2.ID] = &f2
+			})
+		}
+	} else {
+		fmt.Print("\n[No New Events Found]\n\n")
+	}
+
+	return nil
+}
+
+// query the events collection to return the most recent event
+func getLatestEvent(ctx context.Context, coll *mongo.Collection) (*data.Event, error) {
+	opts := options.FindOne().
+		SetSort(bson.M{"date": -1}).
+		SetProjection(bson.M{
+			"_id":      1,
+			"name":     1,
+			"date":     1,
+			"location": 1,
+		})
+
+	var ev data.Event
+	if err := coll.FindOne(ctx, bson.M{}, opts).Decode(&ev); err != nil {
+		return nil, err
+	}
+	return &ev, nil
+}
+
 func extracNums(s string) (i1, i2 int, err error) {
 	ofIndex := strings.Index(s, "of")
 
@@ -972,6 +1173,4 @@ func RunBatches() {
 	if err := data.BatchLoad(ctx, db.Collection("fights"), fightMap, 1000); err != nil {
 		log.Fatalf("fights load failed: %v", err)
 	}
-
-	fmt.Println("✅ Data loaded successfully!")
 }
