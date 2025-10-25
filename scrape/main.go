@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/anthonybliss1/ufc-api/scrape/data"
 	"github.com/anthonybliss1/ufc-api/scrape/utils"
 	"github.com/joho/godotenv"
 )
@@ -31,6 +32,7 @@ func init() {
 
 func main() {
 	var update = flag.Bool("update", false, "run update function only")
+	var upcoming = flag.Bool("upcoming", false, "collect upcoming events and matchups")
 
 	flag.Parse()
 
@@ -42,7 +44,8 @@ func main() {
 	// start a timer to track the scraping process speed
 	start := time.Now()
 
-	if *update {
+	switch true {
+	case *update:
 		// only collect most recent data not in db
 		fmt.Println("[Starting Update...]")
 		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
@@ -50,7 +53,15 @@ func main() {
 		if err := utils.RunUpdate(client); err != nil {
 			log.Panic(err)
 		}
-	} else {
+	case *upcoming:
+		fmt.Println("[Starting Upcoming Collection...]")
+		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
+		event := data.Event{}
+
+		if err := utils.IterateUpcomingEvents(&event, client); err != nil {
+			log.Panic(err)
+		}
+	default:
 		// collect all data
 		fmt.Println("[Starting Complete Refresh...]")
 		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")

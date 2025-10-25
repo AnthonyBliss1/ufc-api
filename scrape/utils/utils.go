@@ -868,7 +868,7 @@ func CollectEventDetails(event *data.Event, eventLink string, reqReferer string,
 // ~~~~~~~~~~~~~~~~~~~~~
 
 // TODO complete this function to collect data on all the upcoming fights and each matchup for the upcoming events
-func CollectUpcomingEventData(event *data.Event, client *http.Client) error {
+func IterateUpcomingEvents(event *data.Event, client *http.Client) error {
 	eventUpcomingLink := "http://ufcstats.com/statistics/events/upcoming?page=all"
 
 	requestEvent, err := http.NewRequest("GET", eventUpcomingLink, nil)
@@ -898,24 +898,138 @@ func CollectUpcomingEventData(event *data.Event, client *http.Client) error {
 
 	page := doc.Find(".b-statistics__sub-inner")
 
+	// find table containing upcoming fights
 	events := page.Find("table.b-statistics__table-events tbody tr")
 	if page.Length() == 0 {
 		log.Fatal("failed to find completed events table")
 	}
 
+	// looping through every upcoming fight in the table
 	events.Each(func(i int, tr *goquery.Selection) {
 		//skip first column (is an empty row)
 		if i == 0 {
 			return
 		}
 
+		// each td child is a column, first column (Eq(0)) will contain the link the event data
 		td := tr.ChildrenFiltered("td")
 
+		// find the event link
 		link, _ := td.Eq(0).Find("a").Attr("href")
 
 		fmt.Printf("Event Link: %s\n", link)
 
+		// then navigate to the event page which contains all fights, iterate the fights
+		if err := IterateUpcomingFights(link, eventUpcomingLink, client); err != nil {
+			log.Fatalf("error on fights page of upcoming event: %v", err)
+		}
+
 	})
+
+	return nil
+}
+
+// navigate to the upcoming event page and iterate the list of fights
+func IterateUpcomingFights(eventLink string, referer string, client *http.Client) error {
+	request, err := http.NewRequest("GET", eventLink, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build request to fights page of upcoming event: %v", err)
+	}
+
+	request.Header.Add("referer", referer)
+	request.Header.Add("host", Host)
+	request.Header.Add("User-Agent", UserAgent)
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("failed to submit request for fights page of upcoming event: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
+	}
+
+	// load body of response in goquery doc
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	page := doc.Find(".l-page__container")
+
+	// find the table that contains all the fights for the upcoming event
+	fights := page.Find(".b-fight-details__table tbody tr")
+	if fights.Length() == 0 {
+		log.Fatal("failed to find fights for upcoming events")
+	}
+
+	// loop through each fight in the table (rows)
+	fights.Each(func(i int, tr *goquery.Selection) {
+		// each child will be a column in the specific row, column 5 (Eq(4)) will contain the link to the matchup
+		td := tr.ChildrenFiltered("td")
+
+		// find link to the specific fight which contains the matchup data
+		fightLink, e := td.Eq(4).Find("a").Attr("data-link")
+		if !e {
+			log.Fatal("cannot find upcoming fight link")
+		} else {
+			// then navigate to the matchup page and collect the data
+			if err := CollectUpcomingFightData(fightLink, eventLink, client); err != nil {
+				log.Fatalf("could not collect upcoming fight data from matchup page: %v", err)
+			}
+		}
+	})
+
+	return nil
+}
+
+// navigate to the specific matchup page and collect the matchup data
+func CollectUpcomingFightData(fightLink string, referer string, client *http.Client) error {
+	request, err := http.NewRequest("GET", fightLink, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build request to upcoming fight page: %v", err)
+	}
+
+	request.Header.Add("referer", referer)
+	request.Header.Add("host", Host)
+	request.Header.Add("User-Agent", UserAgent)
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("failed to submit request for event: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
+	}
+
+	// load body of response in goquery doc
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	page := doc.Find(".l-page__container")
+
+	// find the event name
+	title := page.Find(".b-content__title").First()
+	titleName := strings.TrimSpace(title.Text())
+
+	// find the fight details section
+	fightDetails := page.Find(".b-fight-details").First()
+	if fightDetails.Length() == 0 {
+		log.Fatal("failed to find fight data in upcoming matchup")
+	}
+
+	// header of the fight details contains the fighter names
+	participants := fightDetails.Find(".b-fight-details__persons")
+
+	p1Name := strings.TrimSpace(participants.Find("a").Eq(0).Text())
+	p2Name := strings.TrimSpace(participants.Find("a").Eq(1).Text())
+
+	fmt.Printf("Fight Found!\nEvent: %s\nP1: %s\nP2: %s\n\n", titleName, p1Name, p2Name)
 
 	return nil
 }
