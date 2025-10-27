@@ -30,9 +30,11 @@ const Referer = "http://ufcstats.com/statistics/fighters"
 const Host = "ufcstats.com"
 
 var (
-	fighterMap = make(data.FighterMap)
-	fightMap   = make(data.FightMap)
-	eventMap   = make(data.EventMap)
+	fighterMap       = make(data.FighterMap)
+	fightMap         = make(data.FightMap)
+	eventMap         = make(data.EventMap)
+	upcomingEventMap = make(data.UpcomingEventMap)
+	upcomingFightMap = make(data.UpcomingFightMap)
 )
 
 // query param 'char=' letters to iterate through
@@ -868,6 +870,9 @@ func CollectEventDetails(event *data.Event, eventLink string, reqReferer string,
 // ~~~~~~~~~~~~~~~~~~~~~
 
 // TODO complete this function to collect data on all the upcoming fights and each matchup for the upcoming events
+// this does not need to be super involved. I should only need to navigate two pages - 1. the upcoming events lists and
+// 2. the fights listed for the specific event
+// data needed will be the event information, fighters names and ids. from there i can just query the fighter data in the database using idss
 func IterateUpcomingEvents(event *data.Event, client *http.Client) error {
 	eventUpcomingLink := "http://ufcstats.com/statistics/events/upcoming?page=all"
 
@@ -915,22 +920,33 @@ func IterateUpcomingEvents(event *data.Event, client *http.Client) error {
 		td := tr.ChildrenFiltered("td")
 
 		// find the event link
-		link, _ := td.Eq(0).Find("a").Attr("href")
+		upcomingEventLink, _ := td.Eq(0).Find("a").Attr("href")
 
-		fmt.Printf("Event Link: %s\n", link)
+		eventURL, err := url.Parse(upcomingEventLink)
+		if err != nil {
+			log.Fatalf("failed to parse upcoming event url: %v", err)
+		}
+		eventID := path.Base(eventURL.Path)
+
+		fmt.Printf("Event Link: %s | %s\n", upcomingEventLink, eventID)
+
+		// create the upcoming event struct (make sure upcomingevent map is created)
+		upcomingEvent := data.UpcomingEvent{ID: eventID}
 
 		// then navigate to the event page which contains all fights, iterate the fights
-		if err := IterateUpcomingFights(link, eventUpcomingLink, client); err != nil {
+		if err := CollectUpcomingEventData(&upcomingEvent, upcomingEventLink, eventUpcomingLink, client); err != nil {
 			log.Fatalf("error on fights page of upcoming event: %v", err)
 		}
 
+		// add the upcoming event struct to the upcoming event map
+		upcomingEventMap[upcomingEvent.ID] = &upcomingEvent
 	})
 
 	return nil
 }
 
 // navigate to the upcoming event page and iterate the list of fights
-func IterateUpcomingFights(eventLink string, referer string, client *http.Client) error {
+func CollectUpcomingEventData(upcomingEvent *data.UpcomingEvent, eventLink string, referer string, client *http.Client) error {
 	request, err := http.NewRequest("GET", eventLink, nil)
 	if err != nil {
 		return fmt.Errorf("failed to build request to fights page of upcoming event: %v", err)
@@ -958,6 +974,24 @@ func IterateUpcomingFights(eventLink string, referer string, client *http.Client
 
 	page := doc.Find(".l-page__container")
 
+	upcomingEvent.Name = strings.TrimSpace(page.Find(".b-content__title").First().Text())
+
+	detailsList := page.Find(".b-fight-details div ul").First()
+
+	listItems := detailsList.Find(".b-list__box-list-item")
+
+	upcomingEvent.Date, err = time.Parse("January 2, 2006", strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(0).Text()), "Date:")))
+	if err != nil {
+		log.Fatalf("failed to parse upcomingEvent date: %v", err)
+	}
+
+	upcomingEvent.Location = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(listItems.Eq(1).Text()), "Location:"))
+
+	fmt.Println("[ Upcoming Event Details ]")
+	fmt.Printf("Event Name: %s | Event Link: %s | EventID: %s\n", upcomingEvent.Name, eventLink, upcomingEvent.ID)
+	fmt.Printf("Date: %s\n", upcomingEvent.Date.Format("January 2, 2006"))
+	fmt.Printf("Location: %s\n\n", upcomingEvent.Location)
+
 	// find the table that contains all the fights for the upcoming event
 	fights := page.Find(".b-fight-details__table tbody tr")
 	if fights.Length() == 0 {
@@ -969,67 +1003,59 @@ func IterateUpcomingFights(eventLink string, referer string, client *http.Client
 		// each child will be a column in the specific row, column 5 (Eq(4)) will contain the link to the matchup
 		td := tr.ChildrenFiltered("td")
 
-		// find link to the specific fight which contains the matchup data
-		fightLink, e := td.Eq(4).Find("a").Attr("data-link")
+		participants := td.Eq(1).Find("p")
+
+		// collect fighter's names and parse IDs
+		p1Name := strings.TrimSpace(participants.Eq(0).Text())
+		p1Link, e := participants.Eq(0).Find("a").Attr("href")
 		if !e {
-			log.Fatal("cannot find upcoming fight link")
-		} else {
-			// then navigate to the matchup page and collect the data
-			if err := CollectUpcomingFightData(fightLink, eventLink, client); err != nil {
-				log.Fatalf("could not collect upcoming fight data from matchup page: %v", err)
-			}
+			log.Fatal("cannot find p1 link for ID")
 		}
+		u1, err := url.Parse(p1Link)
+		if err != nil {
+			log.Fatalf("failed to parse p1Link for ID: %v", err)
+		}
+		p1ID := path.Base(u1.Path)
+
+		p2Name := strings.TrimSpace(participants.Eq(1).Text())
+		p2Link, e := participants.Eq(1).Find("a").Attr("href")
+		if !e {
+			log.Fatal("cannot find p2 link for ID")
+		}
+		u2, err := url.Parse(p2Link)
+		if err != nil {
+			log.Fatalf("failed to parse p2Link for ID: %v", err)
+		}
+		p2ID := path.Base(u2.Path)
+
+		// store collected fighter names and IDs into fighter structs
+		p1 := data.Fighter{ID: p1ID, Name: p1Name}
+		p2 := data.Fighter{ID: p2ID, Name: p2Name}
+
+		// parse matchup link for fight ID
+		upcomingFightLink, e := td.Eq(4).Find("a").Attr("data-link")
+		if !e {
+			log.Fatal("cannot find upcomingFightLink for ID")
+		}
+		ufl, err := url.Parse(upcomingFightLink)
+		if err != nil {
+			log.Fatalf("failed to parse upcoming fight link for ID: %v", err)
+		}
+		upcomingFightID := path.Base(ufl.Path)
+
+		// here i should collect the matchup fighter's names and ids. then need to query the db to stitch the matchup together
+		upcomingFight := data.UpcomingFight{ID: upcomingFightID, UpcomingEventID: upcomingEvent.ID, Participants: make([]data.Fighter, 0, 2)}
+
+		// add fighters to []Participants of upcoming fight
+		upcomingFight.Participants = append(upcomingFight.Participants, p1, p2)
+
+		// add upcomingFight structs to the map
+		upcomingFightMap[upcomingFight.ID] = &upcomingFight
+
+		fmt.Printf("FightID: %s\nP1: %s | %s\nP2: %s | %s\n\n",
+			upcomingFight.ID, upcomingFight.Participants[0].Name, upcomingFight.Participants[0].ID,
+			upcomingFight.Participants[1].Name, upcomingFight.Participants[1].ID)
 	})
-
-	return nil
-}
-
-// navigate to the specific matchup page and collect the matchup data
-func CollectUpcomingFightData(fightLink string, referer string, client *http.Client) error {
-	request, err := http.NewRequest("GET", fightLink, nil)
-	if err != nil {
-		return fmt.Errorf("failed to build request to upcoming fight page: %v", err)
-	}
-
-	request.Header.Add("referer", referer)
-	request.Header.Add("host", Host)
-	request.Header.Add("User-Agent", UserAgent)
-
-	resp, err := client.Do(request)
-	if err != nil {
-		return fmt.Errorf("failed to submit request for event: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("request not accepted, Status Code: %d | %v", resp.StatusCode, err)
-	}
-
-	// load body of response in goquery doc
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	page := doc.Find(".l-page__container")
-
-	// find the event name
-	title := page.Find(".b-content__title").First()
-	titleName := strings.TrimSpace(title.Text())
-
-	// find the fight details section
-	fightDetails := page.Find(".b-fight-details").First()
-	if fightDetails.Length() == 0 {
-		log.Fatal("failed to find fight data in upcoming matchup")
-	}
-
-	// header of the fight details contains the fighter names
-	participants := fightDetails.Find(".b-fight-details__persons")
-
-	p1Name := strings.TrimSpace(participants.Find("a").Eq(0).Text())
-	p2Name := strings.TrimSpace(participants.Find("a").Eq(1).Text())
-
-	fmt.Printf("Fight Found!\nEvent: %s\nP1: %s\nP2: %s\n\n", titleName, p1Name, p2Name)
 
 	return nil
 }
@@ -1286,5 +1312,11 @@ func RunBatches() {
 	}
 	if err := data.BatchLoad(ctx, db.Collection("fights"), fightMap, 1000); err != nil {
 		log.Fatalf("fights load failed: %v", err)
+	}
+	if err := data.BatchLoad(ctx, db.Collection("upcomingEvents"), upcomingEventMap, 1000); err != nil {
+		log.Fatalf("upcomingEvents load failed: %v", err)
+	}
+	if err := data.BatchLoad(ctx, db.Collection("upcomingFights"), upcomingFightMap, 1000); err != nil {
+		log.Fatalf("upcomingFights load failed: %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -12,9 +13,11 @@ import (
 
 // creating maps to load scraping data (avoiding dupes) then converted to slice structs for laoding into mongo db
 type (
-	FighterMap map[string]*Fighter
-	EventMap   map[string]*Event
-	FightMap   map[string]*Fight
+	FighterMap       map[string]*Fighter
+	EventMap         map[string]*Event
+	FightMap         map[string]*Fight
+	UpcomingEventMap map[string]*UpcomingEvent
+	UpcomingFightMap map[string]*UpcomingFight
 )
 
 // creating 'IDable' interface which is any type that implements these methods (used for BatchLoad())
@@ -97,6 +100,19 @@ type FightStats struct {
 	GroundA     int    `bson:"ground_attempted" json:"ground_attempted"`       // number of ground strikes attempted in the fight for a specific fighter
 }
 
+type UpcomingEvent struct {
+	ID       string    `bson:"_id" json:"id"`            // unique id given to the upcoming event
+	Name     string    `bson:"name" json:"name"`         // name of the upcoming event
+	Date     time.Time `bson:"date" json:"date"`         // date of the upcoming event
+	Location string    `bson:"location" json:"location"` // location of the upcoming event
+}
+
+type UpcomingFight struct {
+	ID              string    `bson:"_id" json:"id"`                              // unique id given to the matchups
+	UpcomingEventID string    `bson:"upcoming_event_id" json:"upcoming_event_id"` // id of the upcoming event
+	Participants    []Fighter `bson:"tale_of_the_tape" json:"tale_of_the_tape"`   // all fighter stats for both fighters
+}
+
 // this will feed a /Fighters endpoint
 type Fighters struct {
 	Items []Fighter `bson:"fighters" json:"fighters"`
@@ -112,6 +128,16 @@ type Events struct {
 	Items []Event `bson:"events" json:"events"`
 }
 
+// this will feed /UpcomingEvents endpoint
+type UpcomingEvents struct {
+	Item []UpcomingEvent `bson:"upcoming_events" json:"upcoming_events"`
+}
+
+// this will feed /UpcomingFights endpoint
+type UpcomingFights struct {
+	Item []UpcomingFight `bson:"upcoming_fights" json:"upcoming_fights"`
+}
+
 // defining methods to make struct types 'IDable'
 func (f *Fighter) GetID() string   { return f.ID }
 func (f *Fighter) SetID(id string) { f.ID = id }
@@ -122,11 +148,26 @@ func (e *Event) SetID(id string) { e.ID = id }
 func (ft *Fight) GetID() string   { return ft.ID }
 func (ft *Fight) SetID(id string) { ft.ID = id }
 
+func (ue *UpcomingEvent) GetID() string   { return ue.ID }
+func (ue *UpcomingEvent) SetID(id string) { ue.ID = id }
+
+func (uf *UpcomingFight) GetID() string   { return uf.ID }
+func (uf *UpcomingFight) SetID(id string) { uf.ID = id }
+
 // upload data into mongodb collection for either FighterMap, EventMap, or FightMap with values of 'IDable'. default batch size is 1000
 func BatchLoad[T IDable](ctx context.Context, coll *mongo.Collection, m map[string]T, batchSize int) error {
 	if len(m) == 0 {
-		fmt.Printf("[%s Data is Empty, Now Exiting...]\n", coll.Name())
+		fmt.Printf("[%s data is empty, now exiting...]\n", coll.Name())
 		return nil
+	}
+
+	// if dealing with any of the upcoming collections, drop first to clear the data
+	if coll.Name() == "upcomingEvents" || coll.Name() == "upcomingFights" {
+		if err := coll.Drop(ctx); err != nil {
+			log.Fatalf("cannot drop [%s]: %v", coll.Name(), err)
+		} else {
+			fmt.Printf("[%s dropped successfully...]\n", coll.Name())
+		}
 	}
 
 	//setting default batch size
@@ -162,7 +203,7 @@ func BatchLoad[T IDable](ctx context.Context, coll *mongo.Collection, m map[stri
 		}
 	}
 
-	fmt.Printf("✅ [%s] data loaded successfully!\n", coll.Name())
+	fmt.Printf("✅ [%s data loaded successfully!]\n", coll.Name())
 
 	return nil
 }

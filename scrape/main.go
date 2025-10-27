@@ -56,9 +56,9 @@ func main() {
 	case *upcoming:
 		fmt.Println("[Starting Upcoming Collection...]")
 		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
-		event := data.Event{}
+		upcomingEvent := data.Event{}
 
-		if err := utils.IterateUpcomingEvents(&event, client); err != nil {
+		if err := utils.IterateUpcomingEvents(&upcomingEvent, client); err != nil {
 			log.Panic(err)
 		}
 	default:
@@ -67,6 +67,12 @@ func main() {
 		fmt.Print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n")
 
 		if err := utils.IterateFighters(client); err != nil {
+			log.Panic(err)
+		}
+
+		upcomingEvent := data.Event{}
+
+		if err := utils.IterateUpcomingEvents(&upcomingEvent, client); err != nil {
 			log.Panic(err)
 		}
 	}
