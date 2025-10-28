@@ -1280,6 +1280,9 @@ func extracNums(s string) (i1, i2 int, err error) {
 	return i1, i2, nil
 }
 
+// BATCHING / POPULATING DATA IN DB
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 func RunBatches() {
 	connString := os.Getenv("MONGO_URI")
 	if connString == "" {
@@ -1316,7 +1319,71 @@ func RunBatches() {
 	if err := data.BatchLoad(ctx, db.Collection("upcomingEvents"), upcomingEventMap, 1000); err != nil {
 		log.Fatalf("upcomingEvents load failed: %v", err)
 	}
+
+	// update fighter record in upcoming fights with 'Fighter' data before loading upcomingfights
+	if err := EnrichUpcomingFightsFromDB(ctx, db, upcomingFightMap); err != nil {
+		log.Fatalf("failed enriching upcoming fights: %v", err)
+	}
+
 	if err := data.BatchLoad(ctx, db.Collection("upcomingFights"), upcomingFightMap, 1000); err != nil {
 		log.Fatalf("upcomingFights load failed: %v", err)
 	}
+}
+
+// use this to add data to the tale_of_the_tape (Fighter data) to all []Fighter entries in UpcomingFight
+func EnrichUpcomingFightsFromDB(ctx context.Context, db *mongo.Database, upcomingFightMap map[string]*data.UpcomingFight) error {
+	// collect unique fighter IDs referenced across all upcoming fights
+	idSet := make(map[string]struct{}, 256)
+	for _, uf := range upcomingFightMap {
+		for _, p := range uf.Participants {
+			if p.ID != "" {
+				idSet[p.ID] = struct{}{}
+			}
+		}
+	}
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		return nil // nothing to do
+	}
+
+	// fetch fighters in one go; projection optional (grab everything)
+	cur, err := db.Collection("fighters").Find(ctx, bson.M{
+		"_id": bson.M{"$in": ids},
+	})
+	if err != nil {
+		return fmt.Errorf("fighters find failed: %w", err)
+	}
+	defer cur.Close(ctx)
+
+	fByID := make(map[string]data.Fighter, len(ids))
+	for cur.Next(ctx) {
+		var f data.Fighter
+		if err := cur.Decode(&f); err != nil {
+			return fmt.Errorf("decode fighter failed: %w", err)
+		}
+		fByID[f.ID] = f
+	}
+	if err := cur.Err(); err != nil {
+		return fmt.Errorf("cursor error: %w", err)
+	}
+
+	// rewrite the participants
+	for _, uf := range upcomingFightMap {
+		full := make([]data.Fighter, 0, len(uf.Participants))
+		for _, p := range uf.Participants {
+			if f, ok := fByID[p.ID]; ok {
+				full = append(full, f)
+			} else {
+				// not in DB yet (new signee, name change, etc.) — keep your minimal stub
+				full = append(full, p)
+			}
+		}
+		uf.Participants = full
+	}
+
+	return nil
 }
