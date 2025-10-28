@@ -130,12 +130,12 @@ type Events struct {
 
 // this will feed /UpcomingEvents endpoint
 type UpcomingEvents struct {
-	Item []UpcomingEvent `bson:"upcoming_events" json:"upcoming_events"`
+	Items []UpcomingEvent `bson:"upcoming_events" json:"upcoming_events"`
 }
 
 // this will feed /UpcomingFights endpoint
 type UpcomingFights struct {
-	Item []UpcomingFight `bson:"upcoming_fights" json:"upcoming_fights"`
+	Items []UpcomingFight `bson:"upcoming_fights" json:"upcoming_fights"`
 }
 
 // defining methods to make struct types 'IDable'

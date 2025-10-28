@@ -4,12 +4,15 @@ go 1.25.1
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/go-chi/chi/v5 v5.2.3
+	github.com/go-chi/render v1.0.3
 	github.com/joho/godotenv v1.5.1
 	go.mongodb.org/mongo-driver v1.17.4
 	go.mongodb.org/mongo-driver/v2 v2.3.1
 )
 
 require (
+	github.com/ajg/form v1.5.1 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
