@@ -33,26 +33,26 @@ func InitMongo() {
 	}
 
 	MongoDB = client.Database("ufc")
+
+	_ = EnsureIndexes(context.Background(), MongoDB)
 }
 
-func Paginator(r *http.Request, defaultLimit int64) (skip, limit int64) {
-	q := r.URL.Query()
-	page := int64(1)
-	limit = defaultLimit
-
-	if v := q.Get("page"); v != "" {
+func LimitFromQuery(r *http.Request, def, max int64) int64 {
+	limit := def
+	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
-			page = n
+			if n > max {
+				limit = max
+			} else {
+				limit = n
+			}
 		}
 	}
-	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 && n <= 50 { // set max to 50 entries
-			limit = n
-		}
-	}
+	return limit
+}
 
-	skip = (page - 1) * limit
-	return
+func AfterFromQuery(r *http.Request) string {
+	return r.URL.Query().Get("after")
 }
 
 func RenderJSON(w http.ResponseWriter, r *http.Request, v interface{}) {

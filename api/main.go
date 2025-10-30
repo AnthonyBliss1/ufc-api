@@ -31,7 +31,14 @@ func init() {
 		os.Setenv(key, value)
 	}
 
-	fmt.Print("\n[Environment Variables Set!]\n\n")
+	fmt.Println(`
+   __  ______________   ___    ____  ____
+  / / / / ____/ ____/  /   |  / __ \/  _/
+ / / / / /_  / /      / /| | / /_/ // /  
+/ /_/ / __/ / /___   / ___ |/ ____// /   
+\____/_/    \____/  /_/  |_/_/   /___/ `)
+
+	fmt.Print("\n\n[✅ Environment Variables Set]\n\n")
 }
 
 func main() {
@@ -99,5 +106,6 @@ func main() {
 		})
 	})
 
+	fmt.Print("[✅ Listening on http://0.0.0.0:8000]\n\n")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", r))
 }

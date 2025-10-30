@@ -14,25 +14,39 @@ import (
 )
 
 func ListFights(w http.ResponseWriter, r *http.Request) {
-	filter := bson.M{}
 	q := r.URL.Query()
+	and := bson.A{}
 
 	if v := q.Get("event_id"); v != "" {
-		filter["event_id"] = v
+		and = append(and, bson.M{"event_id": v})
 	}
 	if v := q.Get("referee"); v != "" {
-		filter["referee"] = v
+		and = append(and, bson.M{"referee": v})
 	}
 	if v := q.Get("method"); v != "" {
-		filter["method"] = v
+		and = append(and, bson.M{"method": v})
 	}
-	// filter by a fighter ID appearing in participants
 	if v := q.Get("fighter_id"); v != "" {
-		filter["participants.fighter_id"] = v
+		and = append(and, bson.M{"participants.fighter_id": v})
+	}
+	if names := q["fighter_name"]; len(names) > 0 {
+		for _, n := range names {
+			and = append(and, bson.M{
+				"participants.fighter_name": bson.M{"$regex": n, "$options": "i"},
+			})
+		}
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
+	filter := bson.M{}
+	if len(and) > 0 {
+		filter["$and"] = and
+	}
+
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
 
 	cur, err := db.MongoDB.Collection("fights").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -52,12 +66,17 @@ func ListFights(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, f)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.Fights{Items: items})
 }
 
 func SearchFights(w http.ResponseWriter, r *http.Request) {
-	// example flexible search:
-	// ?q=Head%20Kick&fighter_name=Israel%20Adesanya
 	q := r.URL.Query()
 	and := bson.A{}
 
@@ -70,24 +89,17 @@ func SearchFights(w http.ResponseWriter, r *http.Request) {
 			bson.M{"referee": bson.M{"$regex": v, "$options": "i"}},
 		}})
 	}
-	if names := q["fighter_name"]; len(names) > 0 {
-		for _, n := range names {
-			and = append(and, bson.M{
-				"participants.fighter_name": bson.M{"$regex": n, "$options": "i"},
-			})
-		}
-	}
-	if v := q.Get("event_id"); v != "" {
-		and = append(and, bson.M{"event_id": v})
-	}
 
 	filter := bson.M{}
 	if len(and) > 0 {
 		filter["$and"] = and
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
 
 	cur, err := db.MongoDB.Collection("fights").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -107,6 +119,13 @@ func SearchFights(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, f)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.Fights{Items: items})
 }
 
@@ -135,8 +154,11 @@ func ListFighters(w http.ResponseWriter, r *http.Request) {
 		filter["career_stats.slpm"] = bson.M{"$gte": parseFloat32(v)}
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
 
 	cur, err := db.MongoDB.Collection("fighters").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -156,6 +178,13 @@ func ListFighters(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, f)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.Fighters{Items: items})
 }
 
@@ -169,20 +198,16 @@ func SearchFighters(w http.ResponseWriter, r *http.Request) {
 			bson.M{"nickname": bson.M{"$regex": v, "$options": "i"}},
 		}})
 	}
-	if v := q.Get("stance"); v != "" {
-		and = append(and, bson.M{"stance": v})
-	}
-	if v := q.Get("reach_in_max"); v != "" {
-		// reach is stored as string in your schema; skip numeric compare unless you normalize
-		and = append(and, bson.M{"reach_in": bson.M{"$regex": "^" + v}})
-	}
 
 	filter := bson.M{}
 	if len(and) > 0 {
 		filter["$and"] = and
 	}
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
 
 	cur, err := db.MongoDB.Collection("fighters").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -202,6 +227,13 @@ func SearchFighters(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, f)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.Fighters{Items: items})
 }
 
@@ -245,8 +277,11 @@ func ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
 
 	cur, err := db.MongoDB.Collection("events").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -266,6 +301,13 @@ func ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, e)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.Events{Items: items})
 }
 
@@ -274,10 +316,10 @@ func SearchEvents(w http.ResponseWriter, r *http.Request) {
 	and := bson.A{}
 
 	if v := q.Get("q"); v != "" {
-		and = append(and, bson.M{"name": bson.M{"$regex": v, "$options": "i"}})
-	}
-	if v := q.Get("location"); v != "" {
-		and = append(and, bson.M{"location": bson.M{"$regex": v, "$options": "i"}})
+		and = append(and, bson.M{"$or": bson.A{
+			bson.M{"name": bson.M{"$regex": v, "$options": "i"}},
+			bson.M{"location": bson.M{"$regex": v, "$options": "i"}},
+		}})
 	}
 
 	filter := bson.M{}
@@ -285,8 +327,11 @@ func SearchEvents(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
 
 	cur, err := db.MongoDB.Collection("events").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -306,6 +351,13 @@ func SearchEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, e)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.Events{Items: items})
 }
 
@@ -342,8 +394,11 @@ func ListUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
 
 	cur, err := db.MongoDB.Collection("upcomingEvents").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -363,6 +418,13 @@ func ListUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, e)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.UpcomingEvents{Items: items})
 }
 
@@ -371,10 +433,10 @@ func SearchUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 	and := bson.A{}
 
 	if v := q.Get("q"); v != "" {
-		and = append(and, bson.M{"name": bson.M{"$regex": v, "$options": "i"}})
-	}
-	if v := q.Get("location"); v != "" {
-		and = append(and, bson.M{"location": bson.M{"$regex": v, "$options": "i"}})
+		and = append(and, bson.M{"$or": bson.A{
+			bson.M{"name": bson.M{"$regex": v, "$options": "i"}},
+			bson.M{"location": bson.M{"$regex": v, "$options": "i"}},
+		}})
 	}
 
 	filter := bson.M{}
@@ -382,8 +444,11 @@ func SearchUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
 
 	cur, err := db.MongoDB.Collection("upcomingEvents").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -403,6 +468,13 @@ func SearchUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, e)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.UpcomingEvents{Items: items})
 }
 
@@ -423,7 +495,7 @@ func ListUpcomingFights(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("upcoming_event_id"); v != "" {
 		and = append(and, bson.M{"upcoming_event_id": v})
 	}
-	// filter by a fighter ID appearing in participants
+
 	if names := q["fighter_name"]; len(names) > 0 {
 		for _, n := range names {
 			and = append(and, bson.M{
@@ -437,8 +509,11 @@ func ListUpcomingFights(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	skip, limit := db.Paginator(r, 50)
-	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
+	limit := db.LimitFromQuery(r, 50, 200)
+	if after := db.AfterFromQuery(r); after != "" {
+		filter["_id"] = bson.M{"$gt": after}
+	}
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "_id", Value: 1}})
 
 	cur, err := db.MongoDB.Collection("upcomingFights").Find(r.Context(), filter, opts)
 	if err != nil {
@@ -458,6 +533,13 @@ func ListUpcomingFights(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, f)
 	}
+
+	if n := len(items); n > 0 {
+		w.Header().Set("X-Next-After", items[n-1].ID)
+	}
+
+	db.CacheFor(w, 30*time.Second)
+
 	db.RenderJSON(w, r, data.UpcomingFights{Items: items})
 }
 
