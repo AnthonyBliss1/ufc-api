@@ -13,7 +13,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{Keys: bson.D{{Key: "event_id", Value: 1}, {Key: "_id", Value: 1}}},
 		{Keys: bson.D{{Key: "participants.fighter_id", Value: 1}, {Key: "_id", Value: 1}}},
 		{Keys: bson.D{{Key: "method", Value: 1}, {Key: "_id", Value: 1}}},
-		// Optional text index for q (if you decide to use $text)
+		// optional text index for q
 		// {Keys: bson.D{{Key: "fight_detail", Value: "text"}, {Key: "method", Value: "text"}, {Key: "method_detail", Value: "text"}, {Key: "referee", Value: "text"}}},
 	})
 
@@ -31,7 +31,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{Keys: bson.D{{Key: "location", Value: 1}}},
 	})
 
-	// Upcoming*
+	// Upcoming
 	_, _ = db.Collection("upcomingEvents").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "date", Value: -1}, {Key: "_id", Value: 1}}},
 		{Keys: bson.D{{Key: "name", Value: 1}}},

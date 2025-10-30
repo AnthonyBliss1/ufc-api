@@ -81,7 +81,6 @@ func SearchFights(w http.ResponseWriter, r *http.Request) {
 	and := bson.A{}
 
 	if v := q.Get("q"); v != "" {
-		// text-ish OR across a few fields (tweak as desired)
 		and = append(and, bson.M{"$or": bson.A{
 			bson.M{"fight_detail": bson.M{"$regex": v, "$options": "i"}},
 			bson.M{"method": bson.M{"$regex": v, "$options": "i"}},
@@ -149,9 +148,24 @@ func ListFighters(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("stance"); v != "" {
 		filter["stance"] = v
 	}
-	// example: ?min_slpm=3.0
+	// ?min_slpm=3.0
 	if v := q.Get("min_slpm"); v != "" {
 		filter["career_stats.slpm"] = bson.M{"$gte": parseFloat32(v)}
+	}
+	// query param for start and end date range for *Fighter.DOB
+	if v := q.Get("start"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			filter["dob"] = bson.M{"$gte": t}
+		}
+	}
+	if v := q.Get("end"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			if m, ok := filter["dob"].(bson.M); ok {
+				m["$lte"] = t
+			} else {
+				filter["dob"] = bson.M{"$lte": t}
+			}
+		}
 	}
 
 	limit := db.LimitFromQuery(r, 50, 200)
@@ -261,7 +275,7 @@ func ListEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("name"); v != "" {
 		filter["name"] = bson.M{"$regex": v, "$options": "i"}
 	}
-	// Optional date range: ?start=2023-01-01&end=2023-12-31 (ISO8601, date only)
+	// optional date range: ?start=2023-01-01&end=2023-12-31
 	if v := q.Get("start"); v != "" {
 		if t, err := time.Parse("2006-01-02", v); err == nil {
 			filter["date"] = bson.M{"$gte": t}
@@ -378,7 +392,7 @@ func ListUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("name"); v != "" {
 		filter["name"] = bson.M{"$regex": v, "$options": "i"}
 	}
-	// Optional date range: ?start=2023-01-01&end=2023-12-31 (ISO8601, date only)
+	// optional date range: ?start=2023-01-01&end=2023-12-31
 	if v := q.Get("start"); v != "" {
 		if t, err := time.Parse("2006-01-02", v); err == nil {
 			filter["date"] = bson.M{"$gte": t}
