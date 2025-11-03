@@ -513,7 +513,7 @@ func ListUpcomingFights(w http.ResponseWriter, r *http.Request) {
 	if names := q["fighter_name"]; len(names) > 0 {
 		for _, n := range names {
 			and = append(and, bson.M{
-				"participants.fighter_name": bson.M{"$regex": n, "$options": "i"},
+				"tale_of_the_tape.name": bson.M{"$regex": n, "$options": "i"},
 			})
 		}
 	}
