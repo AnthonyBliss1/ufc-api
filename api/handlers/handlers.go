@@ -42,7 +42,7 @@ func ListFights(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -94,7 +94,7 @@ func SearchFights(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -168,7 +168,7 @@ func ListFighters(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -217,7 +217,7 @@ func SearchFighters(w http.ResponseWriter, r *http.Request) {
 	if len(and) > 0 {
 		filter["$and"] = and
 	}
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -291,7 +291,7 @@ func ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -341,7 +341,7 @@ func SearchEvents(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -408,7 +408,7 @@ func ListUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -458,7 +458,7 @@ func SearchUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
@@ -523,7 +523,7 @@ func ListUpcomingFights(w http.ResponseWriter, r *http.Request) {
 		filter["$and"] = and
 	}
 
-	limit := db.LimitFromQuery(r, 50, 200)
+	limit := db.LimitFromQuery(r, 50, 50)
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
