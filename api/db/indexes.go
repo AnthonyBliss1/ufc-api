@@ -38,8 +38,8 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 	})
 	_, _ = db.Collection("upcomingFights").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "upcoming_event_id", Value: 1}, {Key: "_id", Value: 1}}},
-		{Keys: bson.D{{Key: "participants._id", Value: 1}, {Key: "_id", Value: 1}}},          // if embedded fighters have _id
-		{Keys: bson.D{{Key: "participants.fighter_name", Value: 1}, {Key: "_id", Value: 1}}}, // helps name filters a bit
+		{Keys: bson.D{{Key: "tale_of_the_tape._id", Value: 1}, {Key: "_id", Value: 1}}},  // if embedded fighters have _id
+		{Keys: bson.D{{Key: "tale_of_the_tape.name", Value: 1}, {Key: "_id", Value: 1}}}, // helps name filters a bit
 	})
 
 	return nil
