@@ -23,7 +23,7 @@ import (
 )
 
 // should dynamically collect this. not sure if this will affect status of request
-const UserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0"
+const UserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0"
 
 // may not be REQUIRED as headers for request but good to have to avoid potential issues
 const Referer = "http://ufcstats.com/statistics/fighters"
