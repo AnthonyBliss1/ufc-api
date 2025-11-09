@@ -33,8 +33,9 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 
 	// Upcoming
 	_, _ = db.Collection("upcomingEvents").Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{Keys: bson.D{{Key: "date", Value: -1}, {Key: "_id", Value: 1}}},
+		{Keys: bson.D{{Key: "date", Value: 1}, {Key: "_id", Value: 1}}},
 		{Keys: bson.D{{Key: "name", Value: 1}}},
+		{Keys: bson.D{{Key: "location", Value: 1}}},
 	})
 	_, _ = db.Collection("upcomingFights").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "upcoming_event_id", Value: 1}, {Key: "_id", Value: 1}}},

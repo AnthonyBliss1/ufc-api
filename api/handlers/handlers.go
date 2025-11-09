@@ -412,7 +412,7 @@ func ListUpcomingEvents(w http.ResponseWriter, r *http.Request) {
 	if after := db.AfterFromQuery(r); after != "" {
 		filter["_id"] = bson.M{"$gt": after}
 	}
-	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "date", Value: -1}})
+	opts := options.Find().SetLimit(limit).SetSort(bson.D{{Key: "date", Value: 1}})
 
 	cur, err := db.MongoDB.Collection("upcomingEvents").Find(r.Context(), filter, opts)
 	if err != nil {
