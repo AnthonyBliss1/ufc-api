@@ -869,10 +869,6 @@ func CollectEventDetails(event *data.Event, eventLink string, reqReferer string,
 // UPCOMING EVENT DATA
 // ~~~~~~~~~~~~~~~~~~~~~
 
-// TODO complete this function to collect data on all the upcoming fights and each matchup for the upcoming events
-// this does not need to be super involved. I should only need to navigate two pages - 1. the upcoming events lists and
-// 2. the fights listed for the specific event
-// data needed will be the event information, fighters names and ids. from there i can just query the fighter data in the database using idss
 func IterateUpcomingEvents(event *data.Event, client *http.Client) error {
 	eventUpcomingLink := "http://ufcstats.com/statistics/events/upcoming?page=all"
 
@@ -1347,7 +1343,7 @@ func EnrichUpcomingFightsFromDB(ctx context.Context, db *mongo.Database, upcomin
 	}
 
 	if len(ids) == 0 {
-		return nil // nothing to do
+		return nil
 	}
 
 	// fetch fighters in one go; projection optional (grab everything)
@@ -1378,7 +1374,7 @@ func EnrichUpcomingFightsFromDB(ctx context.Context, db *mongo.Database, upcomin
 			if f, ok := fByID[p.ID]; ok {
 				full = append(full, f)
 			} else {
-				// not in DB yet (new signee, name change, etc.) — keep your minimal stub
+				// not in DB yet (new fighter, name change, etc)
 				full = append(full, p)
 			}
 		}
